@@ -71,4 +71,4 @@ build/
 .vscode/
 *.swp
 *.DS_Store
-.history/
+.history/package-lock.json
