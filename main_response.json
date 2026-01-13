@@ -1,30 +1,0 @@
-Note: Unnecessary use of -X or --request, POST is already inferred.
-*   Trying 127.0.0.1:3000...
-  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
-                                 Dload  Upload   Total   Spent    Left  Speed
-  0     0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0* Connected to localhost (127.0.0.1) port 3000 (#0)
-> POST /api/members HTTP/1.1
-> Host: localhost:3000
-> User-Agent: curl/7.81.0
-> Accept: */*
-> Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY5NGEzZTEyNDY2NTAyNWY5YmZiNzk5YyIsInJvbGUiOiJTdXBlckFkbWluIiwiaWF0IjoxNzY3ODU2NjM4LCJleHAiOjE3Njc4ODU0Mzh9.Wkc1d-mDJpVt8RsiPFzJkjU9yv_pcbB3TQ5GqX1h8Go
-> Content-Length: 1002
-> Content-Type: multipart/form-data; boundary=------------------------ff58a089128ad0c3
-> 
-} [935 bytes data]
-* We are completely uploaded and fine
-100  1002    0     0  100  1002      0   4982 --:--:-- --:--:-- --:--:--  4985* Mark bundle as not supporting multiuse
-< HTTP/1.1 201 Created
-< X-Powered-By: Express
-< Access-Control-Allow-Origin: *
-< Content-Type: application/json; charset=utf-8
-< Content-Length: 535
-< ETag: W/"217-tTovpmIsXOj7MNvJv5wYedgqeNg"
-< Date: Thu, 08 Jan 2026 07:17:18 GMT
-< Connection: keep-alive
-< Keep-Alive: timeout=5
-< 
-{ [535 bytes data]
-100  1537  100   535  100  1002   1337   2504 --:--:-- --:--:-- --:--:--  3842
-* Connection #0 to host localhost left intact
-{"memberId":"M63842856","firstName":"TestMain","lastName":"User","gender":"Male","dob":"1990-01-01T00:00:00.000Z","maritalStatus":"Married","photoUrl":"http://localhost:3000/uploads/1767856638417.jpg","spousePhotoUrl":"http://localhost:3000/uploads/1767856638419.jpg","familyId":"F638428912","fatherId":null,"motherId":null,"spouseId":null,"isPrimary":true,"_id":"695f59fe7362c6991a9c87aa","createdAt":"2026-01-08T07:17:18.467Z","updatedAt":"2026-01-08T07:17:18.467Z","__v":0,"fullName":"TestMain User","id":"695f59fe7362c6991a9c87aa"}
