@@ -47,7 +47,7 @@ const swaggerOptions = {
                 url: 'http://localhost:3000',
             },
             {
-                url: 'https://community-backend-api.onrender.com',
+                url: 'https://vishwa-backend-di8k.vercel.app',
             }
         ],
         components: {
@@ -69,7 +69,9 @@ const swaggerOptions = {
 };
 
 const swaggerDocs = swaggerJsdoc(swaggerOptions);
-app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDocs));
+const CSS_URL = "https://cdnjs.cloudflare.com/ajax/libs/swagger-ui/4.1.0/swagger-ui.min.css";
+
+app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDocs, { customCssUrl: CSS_URL }));
 
 // Routes
 app.use('/api/auth', authRoutes);
