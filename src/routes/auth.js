@@ -149,14 +149,21 @@ router.post('/create-user', verifyToken, async (req, res) => {
 router.post('/login', async (req, res) => {
     try {
         const { username, password } = req.body;
+        console.log('[DEBUG] Login Payload:', JSON.stringify(req.body, null, 2));
 
         // Find user
         const user = await User.findOne({ $or: [{ username }, { email: username }] }); // Allow login by email or username
-        if (!user) return res.status(404).json({ message: 'User not found' });
+        if (!user) {
+             console.log('[DEBUG] User not found (Login failed)');
+             return res.status(404).json({ message: 'User not found' });
+        }
 
         // Check password
         const isMatch = await bcrypt.compare(password, user.password);
-        if (!isMatch) return res.status(400).json({ message: 'Invalid credentials' });
+        if (!isMatch) {
+             console.log('[DEBUG] Invalid credentials');
+             return res.status(400).json({ message: 'Invalid credentials' });
+        }
 
         // Check Verification
         if (!user.isVerified) {
@@ -220,6 +227,7 @@ router.post('/login', async (req, res) => {
             }
         });
     } catch (err) {
+        console.error('[DEBUG] Login Error Stack:', err);
         res.status(500).json({ error: err.message });
     }
 });
