@@ -24,7 +24,17 @@ const compression = require('compression');
 const helmet = require('helmet');
 
 // Middleware
-app.use(helmet({ contentSecurityPolicy: false })); // Disable CSP to allow Swagger CDN
+app.use(helmet({
+    contentSecurityPolicy: false,
+    crossOriginResourcePolicy: { policy: "cross-origin" }
+}));
+
+// Global Middleware for CORP
+app.use((req, res, next) => {
+    res.header("Cross-Origin-Resource-Policy", "cross-origin");
+    next();
+});
+
 app.use(compression());
 app.use(cors());
 app.use(bodyParser.json());
@@ -117,7 +127,11 @@ app.use('/api/board', boardRoutes);
 app.use('/api/family', familyRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/locations', locationRoutes);
-app.use('/uploads', express.static('uploads'));
+app.use('/uploads', express.static('uploads', {
+  setHeaders: (res, path, stat) => {
+    res.set('Cross-Origin-Resource-Policy', 'cross-origin');
+  }
+}));
 
 app.get('/', (req, res) => {
     res.send('Backend is running successfully!');
