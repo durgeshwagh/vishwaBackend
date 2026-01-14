@@ -24,14 +24,14 @@ const compression = require('compression');
 const helmet = require('helmet');
 
 // Middleware
-app.use(helmet());
+app.use(helmet({ contentSecurityPolicy: false })); // Disable CSP to allow Swagger CDN
 app.use(compression());
 app.use(cors());
 app.use(bodyParser.json());
 
 // Swagger Configuration
 // Swagger Configuration
-const swaggerUi = require('swagger-ui-express');
+// Swagger Configuration
 const swaggerJsdoc = require('swagger-jsdoc');
 
 const swaggerOptions = {
@@ -47,7 +47,7 @@ const swaggerOptions = {
                 url: 'http://localhost:3000',
             },
             {
-                url: 'https://community-backend-api.onrender.com',
+                url: 'https://vishwa-backend-di8k.vercel.app',
             }
         ],
         components: {
@@ -69,7 +69,42 @@ const swaggerOptions = {
 };
 
 const swaggerDocs = swaggerJsdoc(swaggerOptions);
-app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDocs));
+
+app.get('/api-docs', (req, res) => {
+    const html = `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Community App API Docs</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/swagger-ui/5.18.2/swagger-ui.min.css" />
+    <style>
+        html { box-sizing: border-box; overflow: -moz-scrollbars-vertical; overflow-y: scroll; }
+        *, *:before, *:after { box-sizing: inherit; }
+        body { margin: 0; background: #fafafa; }
+    </style>
+</head>
+<body>
+    <div id="swagger-ui"></div>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/swagger-ui/5.18.2/swagger-ui-bundle.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/swagger-ui/5.18.2/swagger-ui-standalone-preset.min.js"></script>
+    <script>
+        window.onload = function() {
+            const ui = SwaggerUIBundle({
+                spec: ${JSON.stringify(swaggerDocs)},
+                dom_id: '#swagger-ui',
+                presets: [
+                    SwaggerUIBundle.presets.apis,
+                    SwaggerUIStandalonePreset
+                ],
+                layout: "StandaloneLayout",
+            });
+        };
+    </script>
+</body>
+</html>`;
+    res.send(html);
+});
 
 // Routes
 app.use('/api/auth', authRoutes);
@@ -83,6 +118,10 @@ app.use('/api/family', familyRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/locations', locationRoutes);
 app.use('/uploads', express.static('uploads'));
+
+app.get('/', (req, res) => {
+    res.send('Backend is running successfully!');
+});
 
 // Database Connection
 mongoose.connect(MONGO_URI)
