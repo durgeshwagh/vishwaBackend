@@ -138,18 +138,26 @@ app.get('/', (req, res) => {
 });
 
 // Database Connection
-mongoose.connect(MONGO_URI)
+// Database Connection & Server Start
+mongoose.connect(MONGO_URI, {
+    serverSelectionTimeoutMS: 5000 // Fail fast if no DB (5s instead of 30s)
+})
     .then(() => {
         console.log('MongoDB Connected');
         global.useMockDb = false;
+        
+        // Start Server ONLY after DB is connected
+        app.listen(PORT, () => {
+             console.log(`Server running on port ${PORT}`);
+        });
     })
     .catch(err => {
         console.error('MongoDB Connection Failed:', err.message);
-        console.log('Falling back to In-Memory Mock Database');
+        console.log('Falling back to In-Memory Mock Database (Critical Failure)');
         global.useMockDb = true;
+        
+        // Start server in Mock Mode if DB fails
+        app.listen(PORT, () => {
+             console.log(`Server running on port ${PORT} (Mock DB Mode)`);
+        });
     });
-
-// Start Server
-app.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
-});
