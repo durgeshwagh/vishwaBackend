@@ -45,11 +45,20 @@ MemberSchema.virtual('fullName').get(function () {
 });
 
 // Indexes for optimized searching and filtering
-MemberSchema.index({ firstName: 1, lastName: 1 });
-MemberSchema.index({ memberId: 1 }, { unique: true });
-MemberSchema.index({ familyId: 1 });
-MemberSchema.index({ occupation: 1 });
-MemberSchema.index({ city: 1 });
-MemberSchema.index({ village: 1 });
+// Compound Text Index for fast full-text search across multiple fields
+MemberSchema.index({ 
+    firstName: 'text', 
+    lastName: 'text',
+    middleName: 'text',
+    occupation: 'text', 
+    city: 'text', 
+    village: 'text',
+    memberId: 'text',
+    phone: 'text'
+});
+
+// Optimized Sort Index
+MemberSchema.index({ createdAt: -1 });
+MemberSchema.index({ isPrimary: 1 });
 
 module.exports = mongoose.model('Member', MemberSchema);

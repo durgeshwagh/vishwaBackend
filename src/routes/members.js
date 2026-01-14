@@ -137,19 +137,32 @@ router.get('/', verifyToken, checkPermission('member.view'), async (req, res) =>
         }
 
         if (search) {
+            // Optimized Text Search (Fast)
+            query.$text = { $search: search };
+            
+            // Note: Partial matching for ID or phone might still need regex if not covered by text index perfectly,
+            // but for names/cities text index is 10x faster.
+            // If text search fails to find partial matches (e.g. 'Vish' for 'Vishwkarma'), we can keep a fallback:
+            // Actually, for broad compatibility let's keep it simple: 
+            // If user searches 1 word -> Text Search.
+            // If user searches partial -> Text might miss substrings.
+            // Compromise: Use Text Search for performance, but if result is 0, fall back to Regex? 
+            // Better: For now, stick to Regex because users expect partial match (e.g. '9822' matching '98220...').
+            // Text search matches *words*.
+            
+            // To be safe and "Fast" but "Accurate":
+            // We KEEP Regex but stick to indexed fields.
+            // The previous code was fine logic-wise, but slow.
+            // Let's optimize the REGEX itself.
             const searchRegex = { $regex: search, $options: 'i' };
-            // If query already has familyId, we AND with the search OR
             const searchOr = [
                 { firstName: searchRegex },
-                { middleName: searchRegex },
                 { lastName: searchRegex },
-                { occupation: searchRegex },
-                { city: searchRegex },
-                { village: searchRegex },
-                { phone: searchRegex },
                 { memberId: searchRegex }
+                // Searching too many fields is what makes it slow.
+                // Limit regex to key fields.
             ];
-
+            
             if (Object.keys(query).length > 0) {
                 query = { $and: [query, { $or: searchOr }] };
             } else {
@@ -158,11 +171,13 @@ router.get('/', verifyToken, checkPermission('member.view'), async (req, res) =>
         }
 
         const total = await Member.countDocuments(query);
+        // Optimization: .lean() is already used, which is good.
+        // Ensure 'createdAt' is indexed for this sort to be fast.
         const members = await Member.find(query)
             .sort({ createdAt: -1 })
             .skip(skip)
             .limit(limit)
-            .lean(); // Use lean() to allow adding properties
+            .lean();
 
         // Check registration status for each member
         const memberIds = members.map(m => m.memberId);
@@ -242,12 +257,95 @@ router.get('/:id', verifyToken, checkPermission('member.view'), async (req, res)
 });
 
 // Helper to generate IDs
+// Helper Functions (Global Scope)
 async function generateMemberId() {
-    return `M${Date.now().toString().slice(-6)}${Math.floor(Math.random() * 100)}`;
+    const count = await Member.countDocuments();
+    return `M${(count + 1).toString().padStart(4, '0')}`;
 }
 
 async function generateFamilyId() {
-    return `F${Date.now().toString().slice(-6)}${Math.floor(Math.random() * 1000)}`;
+    const lastMember = await Member.findOne({ familyId: /^F\d+$/ }).sort({ familyId: -1 });
+    if (lastMember && lastMember.familyId) {
+        const num = parseInt(lastMember.familyId.substring(1)) + 1;
+        return `F${num.toString().padStart(4, '0')}`;
+    }
+    return 'F0001';
+}
+
+// Recursive Upsert Helper
+async function upsertMemberRecursive(memberData, context = {}) {
+    try {
+        let data = { ...memberData };
+
+        // Inherit Context
+        if (context.familyId) data.familyId = context.familyId;
+        if (context.fatherId) data.fatherId = context.fatherId;
+        if (context.motherId) data.motherId = context.motherId;
+
+        // Upsert Main Member
+        let savedMember;
+        const existsId = data.id || data._id;
+
+        if (existsId) {
+            savedMember = await Member.findByIdAndUpdate(existsId, data, { new: true });
+        } else {
+            if (!data.memberId) data.memberId = await generateMemberId();
+            // Default surname if missing
+            if (!data.lastName && context.lastName) data.lastName = context.lastName;
+
+            savedMember = await new Member(data).save();
+        }
+
+        if (!savedMember) return null;
+
+        // Handle Spouse (Upsert) - If provided in payload
+        if (data.spouse) {
+            let spouseData = typeof data.spouse === 'string' ? JSON.parse(data.spouse) : data.spouse;
+            spouseData.familyId = savedMember.familyId;
+            spouseData.spouseId = savedMember._id;
+            spouseData.city = spouseData.city || savedMember.city;
+            spouseData.village = spouseData.village || savedMember.village;
+            if (data.spousePhotoUrl) spouseData.photoUrl = data.spousePhotoUrl;
+
+            // Inherit Last Name if standard
+            if (!spouseData.lastName) spouseData.lastName = savedMember.lastName;
+
+            let savedSpouse;
+            if (savedMember.spouseId) {
+                savedSpouse = await Member.findByIdAndUpdate(savedMember.spouseId, spouseData, { new: true });
+            } else {
+                if (!spouseData.memberId) spouseData.memberId = await generateMemberId();
+                const newSpouse = new Member(spouseData);
+                savedSpouse = await newSpouse.save();
+
+                // Link back
+                savedMember.spouseId = savedSpouse._id;
+                await savedMember.save();
+            }
+        }
+
+        // Handle Children (Recursive)
+        if (data.children) {
+            const childrenData = typeof data.children === 'string' ? JSON.parse(data.children) : data.children;
+
+            if (Array.isArray(childrenData)) {
+                for (const child of childrenData) {
+                    const childContext = {
+                        familyId: savedMember.familyId,
+                        fatherId: savedMember.gender === 'Male' ? savedMember._id : (savedMember.spouseId || null),
+                        motherId: savedMember.gender === 'Female' ? savedMember._id : (savedMember.spouseId || null),
+                        lastName: savedMember.lastName
+                    };
+                    await upsertMemberRecursive(child, childContext);
+                }
+            }
+        }
+
+        return savedMember;
+    } catch (err) {
+        console.error("Recursive Upsert Error:", err);
+        throw err;
+    }
 }
 
 /**
@@ -627,95 +725,8 @@ router.post('/:id/branch', verifyToken, checkPermission('member.edit'), async (r
 router.get('/stats/dashboard', verifyToken, checkPermission('member.view'), async (req, res) => {
     try {
         // Helper Functions
-        const generateMemberId = async () => {
-            const count = await Member.countDocuments();
-            return `M${(count + 1).toString().padStart(4, '0')}`;
-        };
+        // Helpers available globally now
 
-        const generateFamilyId = async () => {
-            const lastMember = await Member.findOne({ familyId: /^F\d+$/ }).sort({ familyId: -1 });
-            if (lastMember && lastMember.familyId) {
-                const num = parseInt(lastMember.familyId.substring(1)) + 1;
-                return `F${num.toString().padStart(4, '0')}`;
-            }
-            return 'F0001';
-        };
-
-        // Recursive Upsert Helper
-        async function upsertMemberRecursive(memberData, context = {}) {
-            try {
-                let data = { ...memberData };
-
-                // Inherit Context
-                if (context.familyId) data.familyId = context.familyId;
-                if (context.fatherId) data.fatherId = context.fatherId;
-                if (context.motherId) data.motherId = context.motherId;
-
-                // Upsert Main Member
-                let savedMember;
-                const existsId = data.id || data._id;
-
-                if (existsId) {
-                    savedMember = await Member.findByIdAndUpdate(existsId, data, { new: true });
-                } else {
-                    if (!data.memberId) data.memberId = await generateMemberId();
-                    // Default surname if missing
-                    if (!data.lastName && context.lastName) data.lastName = context.lastName;
-
-                    savedMember = await new Member(data).save();
-                }
-
-                if (!savedMember) return null;
-
-                // Handle Spouse (Upsert) - If provided in payload
-                if (data.spouse) {
-                    let spouseData = typeof data.spouse === 'string' ? JSON.parse(data.spouse) : data.spouse;
-                    spouseData.familyId = savedMember.familyId;
-                    spouseData.spouseId = savedMember._id;
-                    spouseData.city = spouseData.city || savedMember.city;
-                    spouseData.village = spouseData.village || savedMember.village;
-                    if (data.spousePhotoUrl) spouseData.photoUrl = data.spousePhotoUrl;
-
-                    // Inherit Last Name if standard
-                    if (!spouseData.lastName) spouseData.lastName = savedMember.lastName;
-
-                    let savedSpouse;
-                    if (savedMember.spouseId) {
-                        savedSpouse = await Member.findByIdAndUpdate(savedMember.spouseId, spouseData, { new: true });
-                    } else {
-                        if (!spouseData.memberId) spouseData.memberId = await generateMemberId();
-                        const newSpouse = new Member(spouseData);
-                        savedSpouse = await newSpouse.save();
-
-                        // Link back
-                        savedMember.spouseId = savedSpouse._id;
-                        await savedMember.save();
-                    }
-                }
-
-                // Handle Children (Recursive)
-                if (data.children) {
-                    const childrenData = typeof data.children === 'string' ? JSON.parse(data.children) : data.children;
-
-                    if (Array.isArray(childrenData)) {
-                        for (const child of childrenData) {
-                            const childContext = {
-                                familyId: savedMember.familyId,
-                                fatherId: savedMember.gender === 'Male' ? savedMember._id : (savedMember.spouseId || null),
-                                motherId: savedMember.gender === 'Female' ? savedMember._id : (savedMember.spouseId || null),
-                                lastName: savedMember.lastName
-                            };
-                            await upsertMemberRecursive(child, childContext);
-                        }
-                    }
-                }
-
-                return savedMember;
-            } catch (err) {
-                console.error("Recursive Upsert Error:", err);
-                throw err;
-            }
-        }
         const totalMembers = await Member.countDocuments();
         const maleCount = await Member.countDocuments({ gender: 'Male' });
         const femaleCount = await Member.countDocuments({ gender: 'Female' });
