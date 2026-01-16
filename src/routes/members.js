@@ -777,8 +777,9 @@ router.delete('/:id', verifyToken, checkPermission('member.delete'), async (req,
     }
 });
 
-// Branch Family: Start Own Family
-router.post('/:id/branch', verifyToken, checkPermission('member.edit'), async (req, res) => {
+// Create Birth Family (Initialize new family tree for a member)
+// This effectively makes them the Primary Member of a new Family ID.
+router.post('/:id/create-family', verifyToken, checkPermission('member.edit'), async (req, res) => {
     try {
         const memberId = req.params.id;
         const member = await Member.findById(memberId);
@@ -787,56 +788,52 @@ router.post('/:id/branch', verifyToken, checkPermission('member.edit'), async (r
             return res.status(404).json({ message: 'Member not found' });
         }
 
+        // If member already has a Real Family (starting with F and not Unassigned/New), warning?
+        // But user said "at any time". So we allow it.
+        // It's like "moving out" or "claiming birthright".
+
         // Generate New Family ID
         const newFamilyId = await generateFamilyId();
 
         // Updates for Main Member
         member.familyId = newFamilyId;
-        member.isPrimary = true;
+        member.isPrimary = true; // They become the Head of this new tree
         await member.save();
 
-        // If married, DO NOT move Spouse to new family ID (Birth Family Immutability)
-        // But we DO need to ensure the Marriage record exists and is active.
-        // Assuming Marriage exists. 
-        // Logic: "Marriage must not change a person's birth family"
-        // So we effectively just change the MAIN MEMBER's family ID (Assuming they are starting a new Lineage).
-        // But wait, if Member is starting a branch, is that a new Birth Family? 
-        // Technically "Branching" usually means "I am leaving my father's house and starting my own".
-        // In the context of "Birth Family", this might be allowed if we consider this a new clan/lineage start.
-        // But the Spouse should keep THEIR birth family.
+        // Children Handling:
+        // Logic: If I create a family, do my children come with me?
+        // If they are my "birth" children, yes.
+        // But if I am a mother, my children usually belong to my Husband's family.
+        // The user requirement: "Mother's birth family" or "Son-in-Law's birth family".
+        // Usually, a Mother's birth family does NOT include her children (they belong to Father's line).
+        // A Son-In-Law's birth family DOES include his children (if he is the father).
+
+        // So: Move children ONLY IF I am Male (Patrilineal assumption common in these communities) 
+        // OR if the children were previously 'Unassigned' or attached to me specifically.
         
-        // Therefore: We REMOVE the spouse update block.
-
-
-        // Also move any children who are part of this couple's unit??
-        // Complicated: If they have added children under the old family ID but linked to them...
-        // Ideally, we should find all children where (fatherId=Member OR motherId=Member) AND familyId=OldFamilyId
-        // And move them to NewFamilyId.
-        // Let's safe-guard this:
-        // Logic for Children Branching:
-        // Children DO take the new Family ID if they are moving with the parent.
-        // Because for children, this IS their birth family (or the family they are growing up in).
-        // If they are young, their "Birth Family" is this new one effectively.
-        // Or if we strictly follow "Birth Family", maybe we shouldn't change it? 
-        // But usually Branching = Splitting the tree. 
-        // I will keep children moving, as they are descendants.
-        const children = await Member.find({
-            $or: [{ fatherId: member._id }, { motherId: member._id }]
-        });
-
-        for (const child of children) {
-            child.familyId = newFamilyId;
-            await child.save();
+        // Revised Logic: 
+        // If Male: Move children. 
+        // If Female: Do NOT move children (they stay with Father, or if Father is unknown/unassigned, maybe move?)
+        // Let's stick to: "Only move children if I am the Father".
+        
+        if (member.gender === 'Male') {
+             const children = await Member.find({ fatherId: member._id });
+             for (const child of children) {
+                 // Only move if they don't have a distinct family yet or are part of the old block
+                 // Actually, best to just move them to ensure tree continuity.
+                 child.familyId = newFamilyId;
+                 await child.save();
+             }
         }
 
         res.json({
-            message: 'Family branched successfully',
+            message: 'New Birth Family created successfully',
             familyId: newFamilyId,
             memberId: member._id
         });
 
     } catch (err) {
-        console.error("Branching Error:", err);
+        console.error("Create Family Error:", err);
         res.status(500).json({ error: err.message });
     }
 });
