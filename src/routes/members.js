@@ -503,24 +503,35 @@ router.post('/', verifyToken, checkPermission('member.create'), upload.fields([{
         // 1. Auto-Generate memberId
         payload.memberId = await generateMemberId();
 
-        // 2. Family ID Logic
-        if (!payload.familyId || payload.familyId === 'FNew') {
+        // 2. Family ID & Relationship Logic
+        // Case A: Marriage Flow (Joining an existing member as spouse)
+        if (payload.spouseId) {
+            console.log('Detected Marriage Flow: Linking to existing spouse');
+            const spouse = await Member.findById(payload.spouseId);
+            if (!spouse) return res.status(404).json({ message: 'Selected spouse not found' });
+
+            // CRITICAL: New Spouse does NOT inherit familyId from husband/wife.
+            // They keep their own birth family. If not provided, it's 'Unassigned'.
+            if (!payload.familyId || payload.familyId === 'FNew') {
+                payload.familyId = 'Unassigned'; 
+            }
+            
+            // Ensure marital status is Married
+            payload.maritalStatus = 'Married';
+        } 
+        else if (!payload.familyId || payload.familyId === 'FNew') {
+            // Case B: Birth Flow (Adding Child)
             if (payload.fatherId || payload.motherId) {
-                // Case A: Adding Child - Inherit from Parent
                 const parentId = payload.fatherId || payload.motherId;
-                // payload.fatherId is ObjectId, we need to query it
                 const parent = await Member.findById(parentId);
                 if (parent) {
                     payload.familyId = parent.familyId;
                 }
             } else {
-                // Case B: Adding Root Member
+                // Case C: Adding Root Member
                 if (payload.maritalStatus === 'Married') {
-                    // Married Root -> New Family ID
                     payload.familyId = await generateFamilyId();
                 } else {
-                    // Single Root -> No Family ID (as per user request "jab tak shadi na ho...")
-                    // We set it to null or a placeholder like "Unassigned"
                     payload.familyId = 'Unassigned';
                 }
             }
@@ -562,6 +573,21 @@ router.post('/', verifyToken, checkPermission('member.create'), upload.fields([{
         }
 
         const savedMember = await newMember.save();
+
+        // ---------------------------------------------------------
+        // HANDLE MARRIAGE LINKING (If spouseId provided)
+        // ---------------------------------------------------------
+        if (payload.spouseId) {
+             const spouse = await Member.findById(payload.spouseId);
+             if (spouse) {
+                 await Marriage.create({
+                    husbandId: savedMember.gender === 'Male' ? savedMember._id : spouse._id,
+                    wifeId: savedMember.gender === 'Female' ? savedMember._id : spouse._id,
+                    status: 'Active'
+                 });
+                 console.log(`Created Marriage between ${savedMember.firstName} and ${spouse.firstName}`);
+             }
+        }
 
         // ---------------------------------------------------------
         // AUTO-CREATE SPOUSE (If Married and Spouse Name Provided)
