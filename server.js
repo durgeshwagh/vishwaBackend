@@ -84,7 +84,7 @@ const swaggerOptions = {
 
 const swaggerDocs = swaggerJsdoc(swaggerOptions);
 
-app.get('/api-docs', (req, res) => {
+app.get('/docs', (req, res) => {
     const html = `
 <!DOCTYPE html>
 <html lang="en">

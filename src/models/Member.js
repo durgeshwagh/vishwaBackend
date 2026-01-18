@@ -173,6 +173,12 @@ MemberSchema.index({
 MemberSchema.index({ createdAt: -1 });
 MemberSchema.index({ isPrimary: 1 });
 
+// Performance Optimization Indexes (for member list page)
+MemberSchema.index({ firstName: 1, lastName: 1 }); // Name search and sorting
+MemberSchema.index({ city: 1 }); // Location filtering
+MemberSchema.index({ phone: 1 }); // Phone search
+MemberSchema.index({ familyId: 1, isPrimary: 1 }); // Family queries with primary status
+
 // Relationship Indexes for fast lookups
 MemberSchema.index({ 'family_lineage_links.immediate_relations.father_id': 1 });
 MemberSchema.index({ 'family_lineage_links.immediate_relations.mother_id': 1 });

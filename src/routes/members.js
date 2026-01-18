@@ -210,9 +210,6 @@ router.get('/', verifyToken, checkPermission('member.view'), async (req, res) =>
             query.$and = andConditions;
         }
 
-
-        const total = await Member.countDocuments(query);
-
         // Sorting
         const { sortBy = 'createdAt', sortOrder = 'desc' } = req.query;
         const sortOptions = {};
@@ -225,15 +222,19 @@ router.get('/', verifyToken, checkPermission('member.view'), async (req, res) =>
         console.log('Query Params:', req.query);
         console.log('Mongo Query:', JSON.stringify(query, null, 2));
 
-        const members = await Member.find(query)
-            .sort(sortOptions)
-            .skip(skip)
-            .limit(limit)
-            .lean();
+        // PERFORMANCE OPTIMIZATION: Execute count and find queries in parallel
+        const [total, members] = await Promise.all([
+            Member.countDocuments(query),
+            Member.find(query)
+                .sort(sortOptions)
+                .skip(skip)
+                .limit(limit)
+                .lean()
+        ]);
 
         // Check registration status for each member
         const memberIds = members.map(m => m.memberId);
-        const registeredUsers = await require('../models/User').find({ memberId: { $in: memberIds } }).select('memberId');
+        const registeredUsers = await require('../models/User').find({ memberId: { $in: memberIds } }).select('memberId').lean();
         const registeredMemberIds = new Set(registeredUsers.map(u => u.memberId));
 
         const membersWithStatus = members.map(m => ({
@@ -1011,10 +1012,12 @@ router.get('/by-pincode/:pincode', verifyToken, checkPermission('member.view'), 
         // Add gender filter if provided
         if (gender) {
             query.$and = [
-                { $or: [
-                    { 'personal_info.gender': gender },
-                    { 'gender': gender } // Legacy field
-                ]}
+                {
+                    $or: [
+                        { 'personal_info.gender': gender },
+                        { 'gender': gender } // Legacy field
+                    ]
+                }
             ];
         }
 
@@ -1049,7 +1052,7 @@ router.get('/:id/siblings', verifyToken, checkPermission('member.view'), async (
         }
 
         const parentalUnionId = member.lineage_links?.parental_union_id;
-        
+
         if (!parentalUnionId) {
             return res.json({ siblings: [], message: 'No parental union found' });
         }
@@ -1059,8 +1062,8 @@ router.get('/:id/siblings', verifyToken, checkPermission('member.view'), async (
             'lineage_links.parental_union_id': parentalUnionId,
             _id: { $ne: memberId }
         })
-        .select('memberId personal_info firstName lastName gender dob')
-        .lean();
+            .select('memberId personal_info firstName lastName gender dob')
+            .lean();
 
         res.json({ siblings, parental_union_id: parentalUnionId });
     } catch (err) {
@@ -1080,9 +1083,9 @@ router.get('/search/maiden-name/:name', verifyToken, checkPermission('member.vie
         const members = await Member.find({
             'personal_info.names.maiden_name': { $regex: name, $options: 'i' }
         })
-        .select('memberId personal_info geography firstName lastName')
-        .limit(parseInt(limit))
-        .lean();
+            .select('memberId personal_info geography firstName lastName')
+            .limit(parseInt(limit))
+            .lean();
 
         res.json(members);
     } catch (err) {
