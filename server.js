@@ -36,7 +36,10 @@ app.use((req, res, next) => {
 });
 
 app.use(compression());
-app.use(cors());
+app.use(cors({
+    origin: ['http://localhost:4200', 'https://vishwa-frontend.vercel.app'],
+    credentials: true
+}));
 app.use(bodyParser.json());
 
 // Swagger Configuration
@@ -57,7 +60,7 @@ const swaggerOptions = {
                 url: 'http://localhost:3000',
             },
             {
-                url: 'https://vishwa-backend-di8k.vercel.app',
+                url: 'https://vishwa-backend-wggt.vercel.app',
             }
         ],
         components: {
