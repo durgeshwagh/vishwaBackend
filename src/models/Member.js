@@ -2,38 +2,148 @@ const mongoose = require('mongoose');
 
 const MemberSchema = new mongoose.Schema({
     memberId: { type: String, required: true, unique: true },
-    firstName: { type: String, required: true },
-    middleName: { type: String }, // New Field
-    lastName: { type: String, required: true },
-    gender: { type: String, required: true }, // 'Male' | 'Female'
-    dob: { type: Date, required: true },
-    maritalStatus: { type: String, required: true }, // 'Single' | 'Married' | 'Divorced' | 'Widowed'
-    occupation: { type: String },
 
-    // Contact & Location
+    // Personal Information (Enhanced Structure)
+    personal_info: {
+        names: {
+            first_name: { type: String, required: true },
+            middle_name: { type: String },
+            last_name: { type: String, required: true },
+            maiden_name: { type: String }, // विवाहापूर्वीचे surname (important for search)
+            nickname: { type: String }
+        },
+        dob: { type: Date, required: true },
+        gender: { type: String, enum: ['Male', 'Female'], required: true },
+        life_status: { type: String, enum: ['Alive', 'Deceased'], default: 'Alive' },
+        blood_group: { type: String },
+        biodata: {
+            education: { type: String },
+            occupation: { type: String },
+            hobbies: [{ type: String }],
+            contact: {
+                mobile: { type: String },
+                email: { type: String },
+                whatsapp: { type: String }
+            }
+        }
+    },
+
+    // Geography (Pincode-based Search)
+    geography: {
+        pincode: { type: Number },
+        state: { type: String },
+        district: { type: String },
+        taluka: { type: String },
+        village: { type: String },
+        full_address: { type: String }
+    },
+
+    // Union-based Lineage Links (NEW!)
+    lineage_links: {
+        parental_union_id: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: 'Union',
+            description: 'माहेर - Parents union ID'
+        },
+        current_union_id: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: 'Union',
+            description: 'सासर - Own marriage union (for married people)'
+        },
+        // Auto-calculated from unions
+        siblings_ids: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Member' }],
+        children_ids: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Member' }]
+    },
+
+    // Verification System
+    verification_details: {
+        status: {
+            type: String,
+            enum: ['Pending', 'Approved', 'Rejected'],
+            default: 'Pending'
+        },
+        verified_by: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+        verified_at: { type: Date },
+        is_genuine: { type: Boolean, default: true },
+        rejection_reason: { type: String }
+    },
+
+    // Legacy fields (backward compatibility)
+    firstName: { type: String },
+    middleName: { type: String },
+    lastName: { type: String },
+    gender: { type: String },
+    dob: { type: Date },
+    maritalStatus: { type: String },
+    occupation: { type: String },
     email: { type: String },
     phone: { type: String },
     address: { type: String },
     state: { type: String },
-    district: { type: String }, // New Field
+    district: { type: String },
     city: { type: String },
-    village: { type: String }, // New Field
-
+    village: { type: String },
     photoUrl: { type: String },
-    spousePhotoUrl: { type: String }, // New Field
-    spouseLastName: { type: String }, // New Field
-    spouseMiddleName: { type: String }, // New Field
+    spousePhotoUrl: { type: String },
+    spouseLastName: { type: String },
+    spouseMiddleName: { type: String },
 
-    // Relationships
+    // Relationships (Legacy - Maintained for Backward Compatibility)
     familyId: { type: String, default: 'FNew' },
     fatherId: { type: mongoose.Schema.Types.ObjectId, ref: 'Member', default: null },
     motherId: { type: mongoose.Schema.Types.ObjectId, ref: 'Member', default: null },
     spouseId: { type: mongoose.Schema.Types.ObjectId, ref: 'Member', default: null },
     isPrimary: { type: Boolean, default: false }, // Head of Family
 
-    // Additional fields requested by user in previous turns likely need to be here if they were lost, 
-    // but sticking to what was in the file minus proxy logic is the safest route for "removing mock db".
-    // I will preserve the exact schema structure from the file I read.
+    // Enhanced Family Lineage Links (New Structure)
+    family_lineage_links: {
+        // Immediate Relations
+        immediate_relations: {
+            father_id: { type: mongoose.Schema.Types.ObjectId, ref: 'Member', default: null },
+            mother_id: { type: mongoose.Schema.Types.ObjectId, ref: 'Member', default: null },
+            spouse_id: { type: mongoose.Schema.Types.ObjectId, ref: 'Member', default: null },
+            siblings_ids: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Member' }],
+            children_ids: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Member' }]
+        },
+
+        // Extended Network
+        extended_network: {
+            // Paternal Relations (Pita Paksha)
+            paternal: {
+                dada_id: { type: mongoose.Schema.Types.ObjectId, ref: 'Member', default: null }, // Paternal Grandfather
+                dadi_id: { type: mongoose.Schema.Types.ObjectId, ref: 'Member', default: null }, // Paternal Grandmother
+                kaka_ids: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Member' }], // Paternal Uncles (Father's brothers)
+                kaki_ids: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Member' }], // Paternal Aunts (Kaka's wives)
+                bua_ids: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Member' }], // Paternal Aunts (Father's sisters)
+                fufa_ids: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Member' }] // Bua's husbands
+            },
+
+            // Maternal Relations (Matru Paksha)
+            maternal: {
+                nana_id: { type: mongoose.Schema.Types.ObjectId, ref: 'Member', default: null }, // Maternal Grandfather
+                nani_id: { type: mongoose.Schema.Types.ObjectId, ref: 'Member', default: null }, // Maternal Grandmother
+                mama_ids: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Member' }], // Maternal Uncles (Mother's brothers)
+                mami_ids: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Member' }], // Mama's wives
+                mausi_ids: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Member' }], // Maternal Aunts (Mother's sisters)
+                mausa_ids: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Member' }] // Mausi's husbands
+            },
+
+            // In-Laws (Sasural)
+            in_laws: {
+                father_in_law_id: { type: mongoose.Schema.Types.ObjectId, ref: 'Member', default: null }, // Sasur
+                mother_in_law_id: { type: mongoose.Schema.Types.ObjectId, ref: 'Member', default: null }, // Saas
+                jija_ids: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Member' }], // Sister's husband
+                saala_ids: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Member' }], // Wife's brother
+                saali_ids: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Member' }] // Wife's sister
+            }
+        }
+    },
+
+    // Metadata
+    meta_data: {
+        created_at: { type: Date, default: Date.now },
+        updated_at: { type: Date, default: Date.now }
+    }
 }, {
     timestamps: true,
     toJSON: { virtuals: true },
@@ -47,12 +157,12 @@ MemberSchema.virtual('fullName').get(function () {
 
 // Indexes for optimized searching and filtering
 // Compound Text Index for fast full-text search across multiple fields
-MemberSchema.index({ 
-    firstName: 'text', 
+MemberSchema.index({
+    firstName: 'text',
     lastName: 'text',
     middleName: 'text',
-    occupation: 'text', 
-    city: 'text', 
+    occupation: 'text',
+    city: 'text',
     village: 'text',
     memberId: 'text',
     phone: 'text',
@@ -62,5 +172,12 @@ MemberSchema.index({
 // Optimized Sort Index
 MemberSchema.index({ createdAt: -1 });
 MemberSchema.index({ isPrimary: 1 });
+
+// Relationship Indexes for fast lookups
+MemberSchema.index({ 'family_lineage_links.immediate_relations.father_id': 1 });
+MemberSchema.index({ 'family_lineage_links.immediate_relations.mother_id': 1 });
+MemberSchema.index({ 'family_lineage_links.immediate_relations.spouse_id': 1 });
+MemberSchema.index({ 'family_lineage_links.extended_network.paternal.dada_id': 1 });
+MemberSchema.index({ 'family_lineage_links.extended_network.maternal.nana_id': 1 });
 
 module.exports = mongoose.model('Member', MemberSchema);
