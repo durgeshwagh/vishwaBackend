@@ -26,7 +26,7 @@ async function seedData() {
     if (!adminExists) {
         const hashedPwd = await bcrypt.hash('admin123', 10);
         await User.create({
-            username: 'admin',
+            username: 'superadmin',
             email: 'admin@community.com',
             password: hashedPwd,
             name: 'Super Admin',

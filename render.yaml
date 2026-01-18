@@ -1,11 +1,24 @@
-services:
-  - type: web
-    name: community-backend
-    env: node
-    buildCommand: npm install
-    startCommand: npm start
-    envVars:
-      - key: MONGO_URI
-        sync: false
-      - key: JWT_SECRET
-        sync: false
+# Exported from Render on 2026-01-13T11:24:19Z
+version: "1"
+projects:
+  - name: My project
+    environments:
+      - name: Production
+        services:
+          - type: web
+            name: Community_Vishwkarma
+            runtime: node
+            repo: https://github.com/nayneshrathod/Community_Vishwkarma_be
+            plan: free
+            envVars:
+              - key: JWT_SECRET
+                sync: false
+              - key: NODE_VERSION
+                sync: false
+              - key: MONGO_URI
+                sync: false
+            region: oregon
+            buildCommand: npm install
+            startCommand: node index.js
+            autoDeployTrigger: commit
+            rootDir: ./

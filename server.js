@@ -15,6 +15,7 @@ const boardRoutes = require('./src/routes/board');
 const familyRoutes = require('./src/routes/family');
 const adminRoutes = require('./src/routes/admin');
 const locationRoutes = require('./src/routes/locations');
+const unionRoutes = require('./src/routes/unions'); // NEW: Union routes
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -130,10 +131,11 @@ app.use('/api/board', boardRoutes);
 app.use('/api/family', familyRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/locations', locationRoutes);
+app.use('/api/unions', unionRoutes); // NEW: Union routes
 app.use('/uploads', express.static('uploads', {
-  setHeaders: (res, path, stat) => {
-    res.set('Cross-Origin-Resource-Policy', 'cross-origin');
-  }
+    setHeaders: (res, path, stat) => {
+        res.set('Cross-Origin-Resource-Policy', 'cross-origin');
+    }
 }));
 
 app.get('/', (req, res) => {
@@ -148,19 +150,19 @@ mongoose.connect(MONGO_URI, {
     .then(() => {
         console.log('MongoDB Connected');
         global.useMockDb = false;
-        
+
         // Start Server ONLY after DB is connected
         app.listen(PORT, () => {
-             console.log(`Server running on port ${PORT}`);
+            console.log(`Server running on port ${PORT}`);
         });
     })
     .catch(err => {
         console.error('MongoDB Connection Failed:', err.message);
         console.log('Falling back to In-Memory Mock Database (Critical Failure)');
         global.useMockDb = true;
-        
+
         // Start server in Mock Mode if DB fails
         app.listen(PORT, () => {
-             console.log(`Server running on port ${PORT} (Mock DB Mode)`);
+            console.log(`Server running on port ${PORT} (Mock DB Mode)`);
         });
     });
