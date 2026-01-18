@@ -59,8 +59,9 @@ lib-cov
 .nyc_output
 
 # Uploads directory (keep the directory but ignore content)
-uploads/*
-!uploads/.gitkeep
+# Uploads directory (allowed for seed images)
+# uploads/*
+# !uploads/.gitkeep
 
 # Build output
 dist/

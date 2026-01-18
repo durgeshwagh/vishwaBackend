@@ -24,7 +24,17 @@ const compression = require('compression');
 const helmet = require('helmet');
 
 // Middleware
-app.use(helmet({ contentSecurityPolicy: false })); // Disable CSP to allow Swagger CDN
+app.use(helmet({
+    contentSecurityPolicy: false,
+    crossOriginResourcePolicy: { policy: "cross-origin" }
+}));
+
+// Global Middleware for CORP
+app.use((req, res, next) => {
+    res.header("Cross-Origin-Resource-Policy", "cross-origin");
+    next();
+});
+
 app.use(compression());
 app.use(cors());
 app.use(bodyParser.json());
@@ -117,25 +127,37 @@ app.use('/api/board', boardRoutes);
 app.use('/api/family', familyRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/locations', locationRoutes);
-app.use('/uploads', express.static('uploads'));
+app.use('/uploads', express.static('uploads', {
+  setHeaders: (res, path, stat) => {
+    res.set('Cross-Origin-Resource-Policy', 'cross-origin');
+  }
+}));
 
 app.get('/', (req, res) => {
     res.send('Backend is running successfully!');
 });
 
 // Database Connection
-mongoose.connect(MONGO_URI)
+// Database Connection & Server Start
+mongoose.connect(MONGO_URI, {
+    serverSelectionTimeoutMS: 5000 // Fail fast if no DB (5s instead of 30s)
+})
     .then(() => {
         console.log('MongoDB Connected');
         global.useMockDb = false;
+        
+        // Start Server ONLY after DB is connected
+        app.listen(PORT, () => {
+             console.log(`Server running on port ${PORT}`);
+        });
     })
     .catch(err => {
         console.error('MongoDB Connection Failed:', err.message);
-        console.log('Falling back to In-Memory Mock Database');
+        console.log('Falling back to In-Memory Mock Database (Critical Failure)');
         global.useMockDb = true;
+        
+        // Start server in Mock Mode if DB fails
+        app.listen(PORT, () => {
+             console.log(`Server running on port ${PORT} (Mock DB Mode)`);
+        });
     });
-
-// Start Server
-app.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
-});
