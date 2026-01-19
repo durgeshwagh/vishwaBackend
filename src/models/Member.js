@@ -155,6 +155,12 @@ MemberSchema.virtual('fullName').get(function () {
     return `${this.firstName} ${this.lastName}`;
 });
 
+// Virtual for age calculation
+MemberSchema.virtual('age').get(function () {
+    if (!this.dob) return null;
+    return Math.floor((Date.now() - this.dob) / (365.25 * 24 * 60 * 60 * 1000));
+});
+
 // Indexes for optimized searching and filtering
 // Compound Text Index for fast full-text search across multiple fields
 MemberSchema.index({
@@ -185,5 +191,8 @@ MemberSchema.index({ 'family_lineage_links.immediate_relations.mother_id': 1 });
 MemberSchema.index({ 'family_lineage_links.immediate_relations.spouse_id': 1 });
 MemberSchema.index({ 'family_lineage_links.extended_network.paternal.dada_id': 1 });
 MemberSchema.index({ 'family_lineage_links.extended_network.maternal.nana_id': 1 });
+
+// Compound index for pagination optimization (cursor-based)
+MemberSchema.index({ createdAt: -1, _id: 1 });
 
 module.exports = mongoose.model('Member', MemberSchema);

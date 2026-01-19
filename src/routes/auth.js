@@ -151,8 +151,11 @@ router.post('/login', async (req, res) => {
         const { username, password } = req.body;
         console.log('[DEBUG] Login Payload:', JSON.stringify(req.body, null, 2));
 
-        // Find user
-        const user = await User.findOne({ $or: [{ username }, { email: username }] }); // Allow login by email or username
+        // Find user - optimized query using indexed fields
+        const user = await User.findOne({
+            $or: [{ username }, { email: username }]
+        }).select('+password'); // Need password for comparison
+
         if (!user) {
             console.log('[DEBUG] User not found (Login failed)');
             return res.status(404).json({ message: 'User not found' });
@@ -175,7 +178,7 @@ router.post('/login', async (req, res) => {
             return res.status(403).json({ message: 'Account is disabled. Please contact admin.' });
         }
 
-        // Find Linked Member - MOVED UP BEFORE TOKEN GENERATION
+        // Find Linked Member - optimized with lean() and select()
         let linkedMember = null;
         if (user.email || user.mobile) {
             linkedMember = await Member.findOne({
@@ -183,35 +186,42 @@ router.post('/login', async (req, res) => {
                     { email: user.email },
                     { phone: user.mobile }
                 ]
-            });
+            })
+                .select('memberId firstName lastName email phone')
+                .lean(); // Faster read-only query
         }
 
         // Special Case: Family ID Login
-        // If no member found by email/mobile, AND username looks like a Family ID (e.g. F2025...), try to find by Family ID
         if (!linkedMember && user.username.startsWith('F')) {
-            // Try to find the "Head" (Male, Married)
-            linkedMember = await Member.findOne({ familyId: user.username, gender: 'Male', maritalStatus: 'Married' });
+            linkedMember = await Member.findOne({
+                familyId: user.username,
+                gender: 'Male',
+                maritalStatus: 'Married'
+            })
+                .select('memberId firstName lastName email phone')
+                .lean();
 
             // Fallback: Any member in that family
             if (!linkedMember) {
-                linkedMember = await Member.findOne({ familyId: user.username });
+                linkedMember = await Member.findOne({ familyId: user.username })
+                    .select('memberId firstName lastName email phone')
+                    .lean();
             }
         }
-
-        // Generate Token
-        // FIXED: Include linkedMember.memberId in the token if found, otherwise fallback to user.memberId
-        const tokenMemberId = linkedMember ? linkedMember.memberId : user.memberId;
-
-        const token = jwt.sign(
-            { id: user._id, role: user.role, name: user.name, memberId: tokenMemberId },
-            process.env.JWT_SECRET || 'secretKey',
-            { expiresIn: '8h' }
-        );
 
         // Determine display name with fallback logic
         const displayName = user.name ||
             (linkedMember ? `${linkedMember.firstName} ${linkedMember.lastName}`.trim() : null) ||
             user.username;
+
+        // Generate Token - include memberId if linked
+        const tokenMemberId = linkedMember ? linkedMember.memberId : user.memberId;
+
+        const token = jwt.sign(
+            { id: user._id, role: user.role, name: displayName, memberId: tokenMemberId },
+            process.env.JWT_SECRET || 'secretKey',
+            { expiresIn: '8h' }
+        );
 
         res.json({
             token,
@@ -222,10 +232,10 @@ router.post('/login', async (req, res) => {
                 role: user.role,
                 email: user.email,
                 permissions: user.permissions,
-                memberId: linkedMember ? linkedMember.id : null, // This is the ObjectId, might want to keep for consistency in frontend
+                memberId: linkedMember ? linkedMember._id : null,
                 memberDetails: linkedMember ? {
-                    id: linkedMember.id,
-                    memberId: linkedMember.memberId, // Added readable ID
+                    id: linkedMember._id,
+                    memberId: linkedMember.memberId,
                     firstName: linkedMember.firstName,
                     lastName: linkedMember.lastName
                 } : null
@@ -306,24 +316,8 @@ router.post('/verify-otp', async (req, res) => {
     try {
         const { mobile, otp } = req.body;
 
-        // Find user and explicitly select OTP fields (hidden by default)
-        // Note: Mongoose `findOne` on the Proxy/Model might behave differently depending on mock/real
-        // Assuming findOne works standardly or we rely on the specific implementation of ProxyUser
-        // If ProxyUser.findOne delegates to Mongoose model, we can use select.
-
-        // However, User.js defines a Proxy class. Let's assume standard findOne works.
-        // We might need to handle the ProxyUser specifics if select isn't available on the static method wrapper
-
-        // Direct Mongoose Model Usage via Proxy might be tricky if not fully exposed. 
-        // Let's assume basic findOne returns a Mongoose document. 
-
-        let user = await User.findOne({ mobile });
-
-        // Re-fetch with secrets if needed, or if mock db, fields are there
-        // Actually, since we updated the schema with select: false, we need to explicitly include them
-        // if using real mongoose.
         // Re-fetch with secrets to verify OTP
-        user = await User.findOne({ mobile }).select('+otp +otpExpires');
+        let user = await User.findOne({ mobile }).select('+otp +otpExpires');
 
         if (!user) return res.status(404).json({ message: 'User not found' });
 
@@ -340,25 +334,27 @@ router.post('/verify-otp', async (req, res) => {
         user.otpExpires = undefined;
         await user.save();
 
-        // Generate Token
-        const token = jwt.sign(
-            { id: user._id, role: user.role, name: user.name, memberId: user.memberId },
-            process.env.JWT_SECRET || 'secretKey',
-            { expiresIn: '8h' }
-        );
-
-        // Find Linked Member
+        // Find Linked Member - optimized with lean()
         let linkedMember = await Member.findOne({
             $or: [
                 { email: user.email },
                 { phone: user.mobile }
             ]
-        });
+        })
+            .select('memberId firstName lastName email phone')
+            .lean();
 
         // Determine display name with fallback logic
         const displayName = user.name ||
             (linkedMember ? `${linkedMember.firstName} ${linkedMember.lastName}`.trim() : null) ||
             user.username;
+
+        // Generate Token
+        const token = jwt.sign(
+            { id: user._id, role: user.role, name: displayName, memberId: linkedMember?.memberId || user.memberId },
+            process.env.JWT_SECRET || 'secretKey',
+            { expiresIn: '8h' }
+        );
 
         res.json({
             token,
@@ -368,9 +364,11 @@ router.post('/verify-otp', async (req, res) => {
                 name: displayName, // Always populated with fallback
                 role: user.role,
                 email: user.email,
-                memberId: linkedMember ? linkedMember.id : null,
+                permissions: user.permissions,
+                memberId: linkedMember ? linkedMember._id : null,
                 memberDetails: linkedMember ? {
-                    id: linkedMember.id,
+                    id: linkedMember._id,
+                    memberId: linkedMember.memberId,
                     firstName: linkedMember.firstName,
                     lastName: linkedMember.lastName
                 } : null

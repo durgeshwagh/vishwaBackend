@@ -1,10 +1,11 @@
 const mongoose = require('mongoose');
 
 const FundSchema = new mongoose.Schema({
-    memberId: { type: String, required: true }, // Store Member ID as string (or ObjectId if using strict refs, but Member is loose in this app)
-    // Actually, looking at Member.js, it seems to rely on custom IDs sometimes or Mongo IDs. 
-    // Let's stick to string to be safe with the "ProxyMember" setup, or Schema.Types.ObjectId if we are sure.
-    // The current app uses string IDs often.
+    memberId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Member',
+        required: true
+    }, // Changed to ObjectId for better referential integrity
     amount: { type: Number, required: true },
     type: {
         type: String,
@@ -17,5 +18,12 @@ const FundSchema = new mongoose.Schema({
 }, {
     timestamps: true
 });
+
+// Indexes for optimized queries
+FundSchema.index({ date: -1 }); // Sort by date (most recent first)
+FundSchema.index({ type: 1, date: -1 }); // Filter by type + sort by date
+FundSchema.index({ memberId: 1 }); // Member's funds lookup
+FundSchema.index({ createdBy: 1 }); // Audit queries
+FundSchema.index({ createdAt: -1, _id: 1 }); // Pagination optimization
 
 module.exports = mongoose.model('Fund', FundSchema);
