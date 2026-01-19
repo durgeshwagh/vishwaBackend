@@ -154,15 +154,15 @@ router.post('/login', async (req, res) => {
         // Find user
         const user = await User.findOne({ $or: [{ username }, { email: username }] }); // Allow login by email or username
         if (!user) {
-             console.log('[DEBUG] User not found (Login failed)');
-             return res.status(404).json({ message: 'User not found' });
+            console.log('[DEBUG] User not found (Login failed)');
+            return res.status(404).json({ message: 'User not found' });
         }
 
         // Check password
         const isMatch = await bcrypt.compare(password, user.password);
         if (!isMatch) {
-             console.log('[DEBUG] Invalid credentials');
-             return res.status(400).json({ message: 'Invalid credentials' });
+            console.log('[DEBUG] Invalid credentials');
+            return res.status(400).json({ message: 'Invalid credentials' });
         }
 
         // Check Verification
@@ -208,12 +208,17 @@ router.post('/login', async (req, res) => {
             { expiresIn: '8h' }
         );
 
+        // Determine display name with fallback logic
+        const displayName = user.name ||
+            (linkedMember ? `${linkedMember.firstName} ${linkedMember.lastName}`.trim() : null) ||
+            user.username;
+
         res.json({
             token,
             user: {
                 id: user._id,
                 username: user.username,
-                name: user.name,
+                name: displayName, // Always populated with fallback
                 role: user.role,
                 email: user.email,
                 permissions: user.permissions,
@@ -350,12 +355,17 @@ router.post('/verify-otp', async (req, res) => {
             ]
         });
 
+        // Determine display name with fallback logic
+        const displayName = user.name ||
+            (linkedMember ? `${linkedMember.firstName} ${linkedMember.lastName}`.trim() : null) ||
+            user.username;
+
         res.json({
             token,
             user: {
                 id: user._id,
                 username: user.username,
-                name: user.name,
+                name: displayName, // Always populated with fallback
                 role: user.role,
                 email: user.email,
                 memberId: linkedMember ? linkedMember.id : null,
