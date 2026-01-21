@@ -98,8 +98,11 @@ router.get('/', verifyToken, checkPermission('member.view'), async (req, res) =>
         let query = {};
 
         // Filter by Primary Status if requested
-        if (isPrimary === 'true') {
+        let isPrimaryBool = false;
+        if (isPrimary && isPrimary.toString().toLowerCase().trim() === 'true') {
             query.isPrimary = true;
+            isPrimaryBool = true;
+            console.log('[DEBUG] Filtering by Primary Member Status');
         }
 
         // ROLE-BASED ACCESS CONTROL
@@ -113,7 +116,7 @@ router.get('/', verifyToken, checkPermission('member.view'), async (req, res) =>
         } else {
             // MEMBER: 
             // If fetching Primary Members (Directory), allow seeing all Primary Members
-            if (isPrimary === 'true') {
+            if (isPrimaryBool) {
                 // No restriction on familyId, they can see all heads
                 // But we might want to respect search/pagination below
             } else {
@@ -142,9 +145,21 @@ router.get('/', verifyToken, checkPermission('member.view'), async (req, res) =>
 
         const andConditions = [];
 
+        // Helper to escape regex special characters
+        function escapeRegex(text) {
+            return text.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, '\\$&');
+        }
+
         if (search) {
-            // Optimized "Like" Search using Regex (Partial Matching)
-            const searchRegex = { $regex: search, $options: 'i' }; // Case-insensitive, partial
+            const safeSearch = escapeRegex(search.trim());
+            
+            // 1. Standard Regex for single fields
+            const searchRegex = { $regex: safeSearch, $options: 'i' };
+
+            // 2. Full Name Regex (Allow flexible spaces for "First Last" matching "First  Last")
+            // Replace spaces with \s* to match zero or more spaces (handling empty middle name double space)
+            const fullNamePattern = safeSearch.replace(/\s+/g, '\\s*'); 
+            const fullNameRegex = { $regex: fullNamePattern, $options: 'i' };
 
             andConditions.push({
                 $or: [
@@ -156,25 +171,50 @@ router.get('/', verifyToken, checkPermission('member.view'), async (req, res) =>
                     { memberId: searchRegex },
                     { phone: searchRegex },
                     { spouseMiddleName: searchRegex },
-                    // Added for Primary Member Search
                     { occupation: searchRegex },
                     { state: searchRegex },
-                    { district: searchRegex }
+                    { district: searchRegex },
+                    // Full Name Search Support
+                    { 
+                        $expr: { 
+                            $regexMatch: { 
+                                input: { 
+                                    $concat: ["$firstName", " ", { $ifNull: ["$middleName", ""] }, " ", "$lastName"] 
+                                }, 
+                                regex: fullNamePattern, 
+                                options: "i" 
+                            } 
+                        } 
+                    }
                 ]
             });
         }
 
         // Advanced Filters (AND logic)
-        const { name, state, district, city, village } = req.query; // Removed individual name fields
+        const { name, state, district, city, village } = req.query; 
 
-        // Single Input Name Filter (Matches First OR Middle OR Last)
+        // Single Input Name Filter (Matches First OR Middle OR Last OR Full Name)
         if (name) {
-            const nameRegex = { $regex: name, $options: 'i' };
+            const safeName = escapeRegex(name.trim());
+            const nameRegex = { $regex: safeName, $options: 'i' };
+            const fullNamePattern = safeName.replace(/\s+/g, '\\s*');
+
             andConditions.push({
                 $or: [
                     { firstName: nameRegex },
                     { middleName: nameRegex },
-                    { lastName: nameRegex }
+                    { lastName: nameRegex },
+                    { 
+                        $expr: { 
+                            $regexMatch: { 
+                                input: { 
+                                    $concat: ["$firstName", " ", { $ifNull: ["$middleName", ""] }, " ", "$lastName"] 
+                                }, 
+                                regex: fullNamePattern, 
+                                options: "i" 
+                            } 
+                        } 
+                    }
                 ]
             });
         }
@@ -182,7 +222,8 @@ router.get('/', verifyToken, checkPermission('member.view'), async (req, res) =>
         // Single Input Location Filter (Matches State OR District OR City OR Village)
         const { location } = req.query;
         if (location) {
-            const locRegex = { $regex: location, $options: 'i' };
+            const safeLoc = escapeRegex(location.trim());
+            const locRegex = { $regex: safeLoc, $options: 'i' };
             andConditions.push({
                 $or: [
                     { city: locRegex },
@@ -196,14 +237,14 @@ router.get('/', verifyToken, checkPermission('member.view'), async (req, res) =>
         // Contact Filter (Matches Phone)
         const { contact } = req.query;
         if (contact) {
-            andConditions.push({ phone: { $regex: contact, $options: 'i' } });
+            andConditions.push({ phone: { $regex: escapeRegex(contact.trim()), $options: 'i' } });
         }
 
 
-        if (state) query.state = { $regex: state, $options: 'i' };
-        if (district) query.district = { $regex: district, $options: 'i' };
-        if (city) query.city = { $regex: city, $options: 'i' };
-        if (village) query.village = { $regex: village, $options: 'i' };
+        if (state) query.state = { $regex: escapeRegex(state.trim()), $options: 'i' };
+        if (district) query.district = { $regex: escapeRegex(district.trim()), $options: 'i' };
+        if (city) query.city = { $regex: escapeRegex(city.trim()), $options: 'i' };
+        if (village) query.village = { $regex: escapeRegex(village.trim()), $options: 'i' };
 
         // Apply AND conditions if any
         if (andConditions.length > 0) {
@@ -218,9 +259,10 @@ router.get('/', verifyToken, checkPermission('member.view'), async (req, res) =>
         // Ensure 'createdAt' is indexed for this sort to be fast.
 
         console.log('--- GET /members Debug ---');
-        console.log('User:', req.user);
+        console.log('User:', req.user.username); // Log simplified user
         console.log('Query Params:', req.query);
-        console.log('Mongo Query:', JSON.stringify(query, null, 2));
+        console.log('AND Conditions:', JSON.stringify(andConditions, null, 2)); // Log AND conditions
+        console.log('Final Mongo Query:', JSON.stringify(query, null, 2));
 
         // PERFORMANCE OPTIMIZATION: Execute count and find queries in parallel
         const [total, members] = await Promise.all([
