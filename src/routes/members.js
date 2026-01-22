@@ -594,6 +594,38 @@ router.post('/', verifyToken, checkPermission('member.create'), upload.fields([{
             }
         }
 
+        // Map Payload to Nested Mongoose Schema
+        // (The Frontend sends flat structure, but Model requires nested 'personal_info')
+        if (!payload.personal_info) {
+            payload.personal_info = {
+                names: {
+                    first_name: payload.firstName,
+                    middle_name: payload.middleName,
+                    last_name: payload.lastName,
+                    maiden_name: payload.maidenName // Assuming frontend sends this if needed
+                },
+                dob: payload.dob,
+                gender: payload.gender,
+                life_status: 'Alive', // Default
+                biodata: {
+                    occupation: payload.occupation,
+                    contact: {
+                        mobile: payload.mobile || payload.phone,
+                        email: payload.email
+                    }
+                }
+            };
+        }
+        if (!payload.geography) {
+            payload.geography = {
+                state: payload.state,
+                district: payload.district,
+                taluka: payload.city || payload.taluka,
+                village: payload.village,
+                full_address: payload.address
+            };
+        }
+
         const newMember = new Member(payload);
 
         // Auto-set Primary if creating a New Family
@@ -642,20 +674,32 @@ router.post('/', verifyToken, checkPermission('member.create'), upload.fields([{
             try {
                 const spousePayload = {
                     memberId: await generateMemberId(),
+                    personal_info: {
+                        names: {
+                            first_name: payload.spouseName,
+                            middle_name: payload.spouseMiddleName || '',
+                            last_name: payload.spouseLastName || (payload.gender === 'Male' ? payload.lastName : ''),
+                        },
+                        dob: payload.spouseDob || payload.dob,
+                        gender: payload.spouseGender || (payload.gender === 'Male' ? 'Female' : 'Male'),
+                        life_status: 'Alive',
+                        biodata: {} // Add any other bio fields if available
+                    },
+                    geography: {
+                        state: payload.state,
+                        district: payload.district,
+                        taluka: payload.city || payload.taluka,
+                        village: payload.village,
+                        full_address: payload.address
+                    },
+                    maritalStatus: 'Married',
+                    familyId: 'Unassigned', // Separate Birth Family
+                    photoUrl: payload.spousePhotoUrl,
+                    // Legacy fields for backward compatibility if needed, though model should handle mapping if virtuals existed
                     firstName: payload.spouseName,
-                    middleName: payload.spouseMiddleName || '',
                     lastName: payload.spouseLastName || (payload.gender === 'Male' ? payload.lastName : ''),
                     gender: payload.spouseGender || (payload.gender === 'Male' ? 'Female' : 'Male'),
-                    dob: payload.spouseDob || payload.dob,
-                    maritalStatus: 'Married',
-                    // spouseId: savedMember._id, // REMOVED
-                    familyId: 'Unassigned', // Separate Birth Family
-                    state: payload.state,
-                    district: payload.district,
-                    city: payload.city,
-                    village: payload.village,
-                    address: payload.address,
-                    photoUrl: payload.spousePhotoUrl
+                    dob: payload.spouseDob || payload.dob
                 };
 
                 const newSpouse = new Member(spousePayload);
