@@ -46,10 +46,21 @@ const router = express.Router();
  *         maritalStatus: Single
  */
 
-// Multer Configuration
-const storage = multer.memoryStorage();
+// Multer Configuration (Disk Storage for Optimization)
+const storage = multer.diskStorage({
+    destination: (req, file, cb) => {
+        cb(null, 'uploads/');
+    },
+    filename: (req, file, cb) => {
+        const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+        cb(null, file.fieldname + '-' + uniqueSuffix + path.extname(file.originalname));
+    }
+});
 
-const upload = multer({ storage: storage });
+const upload = multer({ 
+    storage: storage,
+    limits: { fileSize: 10 * 1024 * 1024 } // 10MB
+});
 
 /**
  * @swagger
@@ -166,6 +177,9 @@ router.get('/', verifyToken, checkPermission('member.view'), async (req, res) =>
                     { firstName: searchRegex },
                     { lastName: searchRegex },
                     { middleName: searchRegex },
+                    { 'personal_info.names.first_name': searchRegex },
+                    { 'personal_info.names.middle_name': searchRegex },
+                    { 'personal_info.names.last_name': searchRegex },
                     { city: searchRegex },
                     { village: searchRegex },
                     { memberId: searchRegex },
@@ -179,7 +193,13 @@ router.get('/', verifyToken, checkPermission('member.view'), async (req, res) =>
                         $expr: { 
                             $regexMatch: { 
                                 input: { 
-                                    $concat: ["$firstName", " ", { $ifNull: ["$middleName", ""] }, " ", "$lastName"] 
+                                    $concat: [
+                                        { $ifNull: ["$firstName", "$personal_info.names.first_name"] }, 
+                                        " ", 
+                                        { $ifNull: ["$middleName", "$personal_info.names.middle_name", ""] }, 
+                                        " ", 
+                                        { $ifNull: ["$lastName", "$personal_info.names.last_name"] }
+                                    ] 
                                 }, 
                                 regex: fullNamePattern, 
                                 options: "i" 
@@ -204,11 +224,20 @@ router.get('/', verifyToken, checkPermission('member.view'), async (req, res) =>
                     { firstName: nameRegex },
                     { middleName: nameRegex },
                     { lastName: nameRegex },
+                    { 'personal_info.names.first_name': nameRegex },
+                    { 'personal_info.names.middle_name': nameRegex },
+                    { 'personal_info.names.last_name': nameRegex },
                     { 
                         $expr: { 
                             $regexMatch: { 
                                 input: { 
-                                    $concat: ["$firstName", " ", { $ifNull: ["$middleName", ""] }, " ", "$lastName"] 
+                                    $concat: [
+                                        { $ifNull: ["$firstName", "$personal_info.names.first_name"] }, 
+                                        " ", 
+                                        { $ifNull: ["$middleName", "$personal_info.names.middle_name", ""] }, 
+                                        " ", 
+                                        { $ifNull: ["$lastName", "$personal_info.names.last_name"] }
+                                    ] 
                                 }, 
                                 regex: fullNamePattern, 
                                 options: "i" 
@@ -245,6 +274,8 @@ router.get('/', verifyToken, checkPermission('member.view'), async (req, res) =>
         if (district) query.district = { $regex: escapeRegex(district.trim()), $options: 'i' };
         if (city) query.city = { $regex: escapeRegex(city.trim()), $options: 'i' };
         if (village) query.village = { $regex: escapeRegex(village.trim()), $options: 'i' };
+        if (req.query.fatherId) query.fatherId = req.query.fatherId;
+        if (req.query.motherId) query.motherId = req.query.motherId;
 
         // Apply AND conditions if any
         if (andConditions.length > 0) {
@@ -367,10 +398,103 @@ async function generateFamilyId() {
     return 'F0001';
 }
 
+// Helper to Map Flat Payload to Nested Schema (Supports Dot Notation for safe updates)
+function mapFlatToNested(payload) {
+    // Helper to safely trim and collapse multiple spaces
+    const clean = (val) => (typeof val === 'string' ? val.trim().replace(/\s+/g, ' ') : val);
+
+    const result = { ...payload };
+
+    // 1. Map Main Names
+    if (payload.firstName !== undefined) {
+        const fn = clean(payload.firstName);
+        result['personal_info.names.first_name'] = fn;
+        result.firstName = fn;
+    }
+    if (payload.middleName !== undefined) {
+        const mn = clean(payload.middleName);
+        result['personal_info.names.middle_name'] = mn;
+        result.middleName = mn;
+    }
+    if (payload.lastName !== undefined) {
+        const ln = clean(payload.lastName);
+        result['personal_info.names.last_name'] = ln;
+        result.lastName = ln;
+    }
+
+    // 2. Full Name Calculation (Backend Force)
+    const f = clean(payload.firstName || '');
+    const m = clean(payload.middleName || '');
+    const l = clean(payload.lastName || '');
+    if (f && l) {
+        result.fullName = `${f} ${m ? m + ' ' : ''}${l}`.replace(/\s+/g, ' ').trim();
+    }
+
+    // 3. Spouse Name Mapping (Explicit construction)
+    let sfn = clean(payload.spouseName || '');
+    const smn = clean(payload.spouseMiddleName || '');
+    const sln = clean(payload.spouseLastName || '');
+
+    // Fallback: If spouseDetails part of payload (common in recursive), 
+    // we use them to ensure spouseName is set at root
+    if (!sfn && payload.spouse) {
+        const sd = typeof payload.spouse === 'string' ? JSON.parse(payload.spouse) : payload.spouse;
+        sfn = clean(sd.firstName || sd.spouseName || '');
+    }
+
+    if (sfn) {
+        result.spouseName = sfn;
+        result.spouseMiddleName = smn;
+        result.spouseLastName = sln;
+    }
+
+    // 4. Details & Bio
+    if (payload.dob) {
+        result['personal_info.dob'] = payload.dob;
+        result.dob = payload.dob;
+    }
+    if (payload.gender) {
+        result['personal_info.gender'] = payload.gender;
+        result.gender = payload.gender;
+    }
+    if (payload.occupation) {
+        result['personal_info.biodata.occupation'] = clean(payload.occupation);
+        result.occupation = clean(payload.occupation);
+    }
+    if (payload.education) {
+        result['personal_info.biodata.education'] = clean(payload.education);
+        result.education = clean(payload.education);
+    }
+    if (payload.height) {
+        result['personal_info.biodata.height'] = clean(payload.height);
+        result.height = clean(payload.height);
+    }
+    if (payload.phone || payload.mobile) {
+        const ph = clean(payload.phone || payload.mobile);
+        result['personal_info.biodata.contact.mobile'] = ph;
+        result.phone = ph;
+    }
+    if (payload.email) {
+        const em = clean(payload.email);
+        result['personal_info.biodata.contact.email'] = em;
+        result.email = em;
+    }
+
+    // 5. Geography
+    if (payload.state) result['geography.state'] = payload.state;
+    if (payload.district) result['geography.district'] = payload.district;
+    if (payload.city || payload.taluka) result['geography.taluka'] = payload.city || payload.taluka;
+    if (payload.village) result['geography.village'] = payload.village;
+    if (payload.address) result['geography.full_address'] = clean(payload.address);
+
+    return result;
+}
+
 // Recursive Upsert Helper
 async function upsertMemberRecursive(memberData, context = {}) {
     try {
-        let data = { ...memberData };
+        // Map Flat -> Nested FIRST
+        let data = mapFlatToNested({ ...memberData });
 
         // Inherit Context
         if (context.familyId) data.familyId = context.familyId;
@@ -403,6 +527,10 @@ async function upsertMemberRecursive(memberData, context = {}) {
             // We leave it as is if provided, else 'Unassigned'.
             if (!spouseData.familyId) spouseData.familyId = 'Unassigned';
 
+            // Map Spouse Data Flat -> Nested
+            spouseData = mapFlatToNested(spouseData);
+            console.log("DEBUG: Spouse Data after mapping:", JSON.stringify(spouseData, null, 2));
+
             // REMOVED: spouseData.spouseId = savedMember._id; // Do not store explicit link on Member
 
             spouseData.city = spouseData.city || savedMember.city;
@@ -422,16 +550,34 @@ async function upsertMemberRecursive(memberData, context = {}) {
             if (spouseData.id || spouseData._id) {
                 savedSpouse = await Member.findByIdAndUpdate(spouseData.id || spouseData._id, spouseData, { new: true });
             } else {
-                // Check if ANY active marriage exists for this member? 
-                // For now, let's assume if spouseData is passed without ID, we create a new one.
-                if (!spouseData.memberId) spouseData.memberId = await generateMemberId();
-                const newSpouse = new Member(spouseData);
-                savedSpouse = await newSpouse.save();
+                // [FIX duplicate spouses] Check if ANY active marriage exists for this member? 
+                const existingMarriage = await Marriage.findOne({
+                    $or: [{ husbandId: savedMember._id }, { wifeId: savedMember._id }],
+                    status: 'Active'
+                });
+
+                if (existingMarriage) {
+                    const existingSpouseId = existingMarriage.husbandId.toString() === savedMember._id.toString() 
+                        ? existingMarriage.wifeId 
+                        : existingMarriage.husbandId;
+                    
+                    console.log(`[Duplicate Prevention] Found existing spouse ${existingSpouseId} via Marriage record.`);
+                    spouseData._id = existingSpouseId; // Treat as Update
+                    savedSpouse = await Member.findByIdAndUpdate(existingSpouseId, spouseData, { new: true });
+                }
+                
+                // If still no spouse found, verify if we accidentally created one previously without linking?
+                // For now, proceed to create new.
+                if (!savedSpouse) {
+                    if (!spouseData.memberId) spouseData.memberId = await generateMemberId();
+                    const newSpouse = new Member(spouseData);
+                    savedSpouse = await newSpouse.save();
+                }
             }
 
             // Create/Update Marriage Record
             if (savedSpouse) {
-                await Marriage.findOneAndUpdate(
+                const marriage = await Marriage.findOneAndUpdate(
                     {
                         $or: [
                             { husbandId: savedMember._id, wifeId: savedSpouse._id },
@@ -445,6 +591,13 @@ async function upsertMemberRecursive(memberData, context = {}) {
                     },
                     { upsert: true, new: true }
                 );
+
+                // CRITICAL: Explicitly link on Member (Legacy Field) for Frontend
+                savedMember.spouseId = savedSpouse._id;
+                savedSpouse.spouseId = savedMember._id;
+
+                await savedMember.save();
+                await savedSpouse.save();
             }
         }
 
@@ -546,51 +699,22 @@ router.post('/', verifyToken, checkPermission('member.create'), upload.fields([{
         // 1. Auto-Generate memberId
         payload.memberId = await generateMemberId();
 
-        // 2. Family ID & Relationship Logic
-        // Case A: Marriage Flow (Joining an existing member as spouse)
-        if (payload.spouseId) {
-            console.log('Detected Marriage Flow: Linking to existing spouse');
-            const spouse = await Member.findById(payload.spouseId);
-            if (!spouse) return res.status(404).json({ message: 'Selected spouse not found' });
-
-            // CRITICAL: New Spouse does NOT inherit familyId from husband/wife.
-            // They keep their own birth family. If not provided, it's 'Unassigned'.
-            if (!payload.familyId || payload.familyId === 'FNew') {
-                payload.familyId = 'Unassigned';
-            }
-
-            // Ensure marital status is Married
-            payload.maritalStatus = 'Married';
-        }
-        else if (!payload.familyId || payload.familyId === 'FNew') {
-            // Case B: Birth Flow (Adding Child)
-            if (payload.fatherId || payload.motherId) {
-                const parentId = payload.fatherId || payload.motherId;
-                const parent = await Member.findById(parentId);
-                if (parent) {
-                    payload.familyId = parent.familyId;
-                }
-            } else {
-                // Case C: Adding Root Member
-                if (payload.maritalStatus === 'Married') {
-                    payload.familyId = await generateFamilyId();
-                } else {
-                    payload.familyId = 'Unassigned';
-                }
-            }
+        // 2. Family ID Logic
+        // If Family ID is not provided or is 'FNew', we assume this is a new Family Head or Independent Member.
+        // We generate a new Family ID.
+        if (!payload.familyId || payload.familyId === 'FNew') {
+            payload.familyId = await generateFamilyId();
         }
 
 
 
-        // Handle File Upload
+        // Handle File Upload (Disk Storage - Store relative path)
         if (req.files) {
             if (req.files['photo']) {
-                const b64 = Buffer.from(req.files['photo'][0].buffer).toString('base64');
-                payload.photoUrl = `data:${req.files['photo'][0].mimetype};base64,${b64}`;
+                payload.photoUrl = `uploads/${req.files['photo'][0].filename}`;
             }
             if (req.files['spousePhoto']) {
-                const b64 = Buffer.from(req.files['spousePhoto'][0].buffer).toString('base64');
-                payload.spousePhotoUrl = `data:${req.files['spousePhoto'][0].mimetype};base64,${b64}`;
+                payload.spousePhotoUrl = `uploads/${req.files['spousePhoto'][0].filename}`;
             }
         }
 
@@ -608,6 +732,8 @@ router.post('/', verifyToken, checkPermission('member.create'), upload.fields([{
                 gender: payload.gender,
                 life_status: 'Alive', // Default
                 biodata: {
+                    education: payload.education,
+                    height: payload.height,
                     occupation: payload.occupation,
                     contact: {
                         mobile: payload.mobile || payload.phone,
@@ -702,16 +828,45 @@ router.post('/', verifyToken, checkPermission('member.create'), upload.fields([{
                     dob: payload.spouseDob || payload.dob
                 };
 
-                const newSpouse = new Member(spousePayload);
-                const savedSpouse = await newSpouse.save();
-                console.log(`Auto-created Spouse Member: ${savedSpouse.firstName} (${savedSpouse.memberId}) linked to ${savedMember.memberId}`);
+                let savedSpouse;
 
-                // Create Marriage
-                await Marriage.create({
-                    husbandId: savedMember.gender === 'Male' ? savedMember._id : savedSpouse._id,
-                    wifeId: savedMember.gender === 'Female' ? savedMember._id : savedSpouse._id,
+                // [Duplicate Prevention] Check for Existing Marriage
+                const existingMarriage = await Marriage.findOne({
+                    $or: [{ husbandId: savedMember._id }, { wifeId: savedMember._id }],
                     status: 'Active'
                 });
+
+                if (existingMarriage) {
+                    const existingSpouseId = existingMarriage.husbandId.toString() === savedMember._id.toString() 
+                        ? existingMarriage.wifeId 
+                        : existingMarriage.husbandId;
+                    
+                    console.log(`[POST] Found existing spouse ${existingSpouseId} via Marriage record. Linking...`);
+                    // Update existing spouse if needed, or just link
+                    savedSpouse = await Member.findById(existingSpouseId);
+                    // update fields if we want to sync? For now just link.
+                } else {
+                    // Create New Spouse
+                    const newSpouse = new Member(spousePayload);
+                    savedSpouse = await newSpouse.save();
+                    console.log(`Auto-created Spouse Member: ${savedSpouse.firstName} (${savedSpouse.memberId}) linked to ${savedMember.memberId}`);
+
+                    // Create Marriage
+                    await Marriage.create({
+                        husbandId: savedMember.gender === 'Male' ? savedMember._id : savedSpouse._id,
+                        wifeId: savedMember.gender === 'Female' ? savedMember._id : savedSpouse._id,
+                        status: 'Active'
+                    });
+                }
+
+                // CRITICAL: Explicitly link on Member (Legacy Field)
+                if (savedSpouse) {
+                    savedMember.spouseId = savedSpouse._id;
+                    savedSpouse.spouseId = savedMember._id; // Bi-directional
+                    
+                    await savedMember.save();
+                    await savedSpouse.save();
+                }
 
             } catch (spouseErr) {
                 console.error('Failed to auto-create spouse member:', spouseErr.message);
@@ -815,14 +970,14 @@ router.put('/:id', verifyToken, checkPermission('member.edit'), upload.fields([
         // Handle Files
         if (req.files) {
             if (req.files['photo']) {
-                const b64 = Buffer.from(req.files['photo'][0].buffer).toString('base64');
-                updates.photoUrl = `data:${req.files['photo'][0].mimetype};base64,${b64}`;
+                updates.photoUrl = `uploads/${req.files['photo'][0].filename}`;
             }
             if (req.files['spousePhoto']) {
-                const b64 = Buffer.from(req.files['spousePhoto'][0].buffer).toString('base64');
-                updates.spousePhotoUrl = `data:${req.files['spousePhoto'][0].mimetype};base64,${b64}`;
+                updates.spousePhotoUrl = `uploads/${req.files['spousePhoto'][0].filename}`;
             }
         }
+        
+        console.log(`[DEBUG] PUT /members/${mainId} Payload:`, JSON.stringify(req.body, null, 2)); // DEBUG LOG
 
         const member = await Member.findById(mainId);
         if (!member) return res.status(404).json({ message: 'Member not found' });
@@ -844,7 +999,8 @@ router.put('/:id', verifyToken, checkPermission('member.edit'), upload.fields([
                 gender: updates.spouseGender,
                 dob: updates.spouseDob,
                 memberId: updates.spouseMemberId, // If provided
-                // If main member has spouseId, we might not need to pass it here, upsertRecursive uses savedMember.spouseId
+                // Use Existing Spouse ID if available
+                _id: updates.spouseId || member.spouseId || undefined
             };
             // If photo updated
             if (updates.spousePhotoUrl) {

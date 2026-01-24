@@ -18,6 +18,7 @@ const MemberSchema = new mongoose.Schema({
         blood_group: { type: String },
         biodata: {
             education: { type: String },
+            height: { type: String },
             occupation: { type: String },
             hobbies: [{ type: String }],
             contact: {
@@ -87,6 +88,9 @@ const MemberSchema = new mongoose.Schema({
     spousePhotoUrl: { type: String },
     spouseLastName: { type: String },
     spouseMiddleName: { type: String },
+    spouseName: { type: String },
+    education: { type: String },
+    height: { type: String },
 
     // Relationships (Legacy - Maintained for Backward Compatibility)
     familyId: { type: String, default: 'FNew' },
@@ -152,7 +156,7 @@ const MemberSchema = new mongoose.Schema({
 
 // Virtual for full name
 MemberSchema.virtual('fullName').get(function () {
-    return `${this.firstName} ${this.lastName}`;
+    return `${this.firstName} ${this.middleName || ''} ${this.lastName}`.replace(/\s+/g, ' ').trim();
 });
 
 // Virtual for age calculation
@@ -175,7 +179,8 @@ MemberSchema.index({
     spouseMiddleName: 'text' // Added index
 });
 
-// Optimized Sort Index
+// Optimized Sort Indexes
+MemberSchema.index({ isPrimary: 1, createdAt: -1 }); // Primary List
 MemberSchema.index({ createdAt: -1 });
 MemberSchema.index({ isPrimary: 1 });
 
@@ -184,6 +189,7 @@ MemberSchema.index({ firstName: 1, lastName: 1 }); // Name search and sorting
 MemberSchema.index({ city: 1 }); // Location filtering
 MemberSchema.index({ phone: 1 }); // Phone search
 MemberSchema.index({ familyId: 1, isPrimary: 1 }); // Family queries with primary status
+MemberSchema.index({ familyId: 1, createdAt: 1 }); // Family timeline/tree queries
 
 // Relationship Indexes for fast lookups
 MemberSchema.index({ 'family_lineage_links.immediate_relations.father_id': 1 });

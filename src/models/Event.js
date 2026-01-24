@@ -6,6 +6,8 @@ const EventSchema = new mongoose.Schema({
     location: { type: String, required: true },
     description: { type: String },
     imageUrl: { type: String },
+    videoUrl: { type: String },
+    mediaType: { type: String, enum: ['Image', 'Video'], default: 'Image' },
     organizer: { type: String }
 }, {
     timestamps: true
