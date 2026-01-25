@@ -89,6 +89,11 @@ const MemberSchema = new mongoose.Schema({
     spouseLastName: { type: String },
     spouseMiddleName: { type: String },
     spouseName: { type: String },
+    fullName: { type: String }, // Pre-calculated First + Middle + Last
+    stateName: { type: String }, // Pre-resolved state name
+    districtName: { type: String }, // Pre-resolved district name
+    talukaName: { type: String }, // Pre-resolved taluka name
+    villageName: { type: String }, // Pre-resolved village name
     education: { type: String },
     height: { type: String },
 
@@ -154,11 +159,7 @@ const MemberSchema = new mongoose.Schema({
     toObject: { virtuals: true }
 });
 
-// Virtual for full name
-MemberSchema.virtual('fullName').get(function () {
-    return `${this.firstName} ${this.middleName || ''} ${this.lastName}`.replace(/\s+/g, ' ').trim();
-});
-
+// Note: fullName is stored as a pre-calculated field (line 92), not a virtual
 // Virtual for age calculation
 MemberSchema.virtual('age').get(function () {
     if (!this.dob) return null;
