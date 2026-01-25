@@ -167,19 +167,17 @@ router.get('/', verifyToken, checkPermission('member.view'), async (req, res) =>
             // 1. Standard Regex for single fields
             const searchRegex = { $regex: safeSearch, $options: 'i' };
 
-            // 2. Full Name Regex (Allow flexible spaces for "First Last" matching "First  Last")
-            // Replace spaces with \s* to match zero or more spaces (handling empty middle name double space)
+            // 2. Full Name Regex (Allow flexible spaces)
             const fullNamePattern = safeSearch.replace(/\s+/g, '\\s*'); 
             const fullNameRegex = { $regex: fullNamePattern, $options: 'i' };
 
             andConditions.push({
                 $or: [
-                    { firstName: searchRegex },
-                    { lastName: searchRegex },
-                    { middleName: searchRegex },
-                    { 'personal_info.names.first_name': searchRegex },
-                    { 'personal_info.names.middle_name': searchRegex },
-                    { 'personal_info.names.last_name': searchRegex },
+                    { fullName: fullNameRegex },
+                    { stateName: searchRegex },
+                    { districtName: searchRegex },
+                    { talukaName: searchRegex },
+                    { villageName: searchRegex },
                     { city: searchRegex },
                     { village: searchRegex },
                     { memberId: searchRegex },
@@ -187,25 +185,7 @@ router.get('/', verifyToken, checkPermission('member.view'), async (req, res) =>
                     { spouseMiddleName: searchRegex },
                     { occupation: searchRegex },
                     { state: searchRegex },
-                    { district: searchRegex },
-                    // Full Name Search Support
-                    { 
-                        $expr: { 
-                            $regexMatch: { 
-                                input: { 
-                                    $concat: [
-                                        { $ifNull: ["$firstName", "$personal_info.names.first_name"] }, 
-                                        " ", 
-                                        { $ifNull: ["$middleName", "$personal_info.names.middle_name", ""] }, 
-                                        " ", 
-                                        { $ifNull: ["$lastName", "$personal_info.names.last_name"] }
-                                    ] 
-                                }, 
-                                regex: fullNamePattern, 
-                                options: "i" 
-                            } 
-                        } 
-                    }
+                    { district: searchRegex }
                 ]
             });
         }
@@ -216,34 +196,14 @@ router.get('/', verifyToken, checkPermission('member.view'), async (req, res) =>
         // Single Input Name Filter (Matches First OR Middle OR Last OR Full Name)
         if (name) {
             const safeName = escapeRegex(name.trim());
-            const nameRegex = { $regex: safeName, $options: 'i' };
             const fullNamePattern = safeName.replace(/\s+/g, '\\s*');
+            const fullNameRegex = { $regex: fullNamePattern, $options: 'i' };
 
             andConditions.push({
                 $or: [
-                    { firstName: nameRegex },
-                    { middleName: nameRegex },
-                    { lastName: nameRegex },
-                    { 'personal_info.names.first_name': nameRegex },
-                    { 'personal_info.names.middle_name': nameRegex },
-                    { 'personal_info.names.last_name': nameRegex },
-                    { 
-                        $expr: { 
-                            $regexMatch: { 
-                                input: { 
-                                    $concat: [
-                                        { $ifNull: ["$firstName", "$personal_info.names.first_name"] }, 
-                                        " ", 
-                                        { $ifNull: ["$middleName", "$personal_info.names.middle_name", ""] }, 
-                                        " ", 
-                                        { $ifNull: ["$lastName", "$personal_info.names.last_name"] }
-                                    ] 
-                                }, 
-                                regex: fullNamePattern, 
-                                options: "i" 
-                            } 
-                        } 
-                    }
+                    { fullName: fullNameRegex },
+                    { firstName: { $regex: safeName, $options: 'i' } },
+                    { lastName: { $regex: safeName, $options: 'i' } }
                 ]
             });
         }
@@ -486,6 +446,13 @@ function mapFlatToNested(payload) {
     if (payload.city || payload.taluka) result['geography.taluka'] = payload.city || payload.taluka;
     if (payload.village) result['geography.village'] = payload.village;
     if (payload.address) result['geography.full_address'] = clean(payload.address);
+
+    // 6. Resolved Names (Persist to root for easy display/search)
+    if (payload.fullName) result.fullName = payload.fullName;
+    if (payload.stateName) result.stateName = payload.stateName;
+    if (payload.districtName) result.districtName = payload.districtName;
+    if (payload.talukaName) result.talukaName = payload.talukaName;
+    if (payload.villageName) result.villageName = payload.villageName;
 
     return result;
 }
@@ -1135,16 +1102,14 @@ router.post('/:id/create-family', verifyToken, checkPermission('member.edit'), a
  */
 router.get('/stats/dashboard', verifyToken, checkPermission('member.view'), async (req, res) => {
     try {
-        // Helper Functions
-        // Helpers available globally now
-
+        // Member Stats
         const totalMembers = await Member.countDocuments();
         const maleCount = await Member.countDocuments({ gender: 'Male' });
         const femaleCount = await Member.countDocuments({ gender: 'Female' });
+        const primaryMemberCount = await Member.countDocuments({ isPrimary: true });
 
         const unmarriedBoys = await Member.find({
             gender: 'Male', maritalStatus: 'Single',
-            // Optional: Filter by age > 20 if DOB exists
             dob: { $lte: new Date(new Date().setFullYear(new Date().getFullYear() - 20)) }
         }).limit(10);
 
@@ -1153,21 +1118,62 @@ router.get('/stats/dashboard', verifyToken, checkPermission('member.view'), asyn
             dob: { $lte: new Date(new Date().setFullYear(new Date().getFullYear() - 18)) }
         }).limit(10);
 
-        // Mock Donations/Events for now (replacing real DB calls if models not ready, 
-        // but user requested they work. I'll check if models exist, if not use placeholder)
-        // I'll assume Event model exists or I query generic collection if needed.
-        // For safely, I'll return static for donations/events if I can't find them, but I'll try.
-        // Actually, let's keep it simple and robust.
+        // Fund/Donation Stats - Query the actual Fund collection
+        let totalDonationAmount = 0;
+        let totalDonationCount = 0;
+        let recentDonations = [];
+        try {
+            const Fund = require('../models/Fund');
+            
+            // Get total donation amount using aggregation
+            const donationAgg = await Fund.aggregate([
+                { $group: { _id: null, totalAmount: { $sum: '$amount' }, count: { $sum: 1 } } }
+            ]);
+            
+            if (donationAgg.length > 0) {
+                totalDonationAmount = donationAgg[0].totalAmount || 0;
+                totalDonationCount = donationAgg[0].count || 0;
+            }
 
-        const totalDonationAmount = 0; // Replace with await Donation.aggregate... if Donation model exists
-        const eventCount = 0; // Replace with await Event.countDocuments() ...
+            // Get recent donations (last 5)
+            recentDonations = await Fund.find()
+                .sort({ createdAt: -1 })
+                .limit(5)
+                .populate('memberId', 'firstName lastName memberId')
+                .lean();
+        } catch (fundErr) {
+            console.log('Fund model not available or error:', fundErr.message);
+        }
+
+        // Event Stats
+        let eventCount = 0;
+        let upcomingEvents = [];
+        try {
+            const Event = require('../models/Event');
+            eventCount = await Event.countDocuments({ date: { $gte: new Date() } });
+            upcomingEvents = await Event.find({ date: { $gte: new Date() } })
+                .sort({ date: 1 })
+                .limit(3)
+                .lean();
+        } catch (eventErr) {
+            console.log('Event model not available or error:', eventErr.message);
+        }
+
+        // Family Stats
+        const uniqueFamilies = await Member.distinct('familyId', { familyId: { $ne: 'Unassigned', $nin: [null, ''] } });
+        const totalFamilies = uniqueFamilies.length;
 
         res.json({
             totalMembers,
             maleCount,
             femaleCount,
+            primaryMemberCount,
+            totalFamilies,
             totalDonationAmount,
+            totalDonationCount,
+            recentDonations,
             eventCount,
+            upcomingEvents,
             unmarriedBoys,
             unmarriedGirls
         });
