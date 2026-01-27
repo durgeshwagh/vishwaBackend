@@ -61,7 +61,7 @@ const swaggerOptions = {
                 url: 'http://localhost:3000',
             },
             {
-                url: 'https://vishwa-backend-wggt.vercel.app',
+                url: 'https://api.vishwasetu.co.in',
             }
         ],
         components: {
