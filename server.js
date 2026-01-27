@@ -41,6 +41,7 @@ app.use(cors({
     origin: ['http://localhost:4200', 'https://www.vishwasetu.co.in'],
     credentials: true
 }));
+
 app.use(bodyParser.json());
 
 // Swagger Configuration
