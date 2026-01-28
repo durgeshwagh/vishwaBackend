@@ -91,7 +91,7 @@ router.get('/', async (req, res) => {
  *       201:
  *         description: Event created
  */
-router.post('/', verifyToken, upload.single('media'), async (req, res) => {
+router.post('/', verifyToken, checkPermission('events.manage'), upload.single('media'), async (req, res) => {
     try {
         const payload = { ...req.body };
         
@@ -162,7 +162,7 @@ router.get('/:id', async (req, res) => {
  *       200:
  *         description: Event updated
  */
-router.put('/:id', verifyToken, upload.single('media'), async (req, res) => {
+router.put('/:id', verifyToken, checkPermission('events.manage'), upload.single('media'), async (req, res) => {
     try {
         const updates = { ...req.body };
         
@@ -203,7 +203,7 @@ router.put('/:id', verifyToken, upload.single('media'), async (req, res) => {
  *       200:
  *         description: Event deleted
  */
-router.delete('/:id', verifyToken, async (req, res) => {
+router.delete('/:id', verifyToken, checkPermission('events.manage'), async (req, res) => {
     try {
         await Event.findByIdAndDelete(req.params.id);
         res.json({ message: 'Event deleted successfully' });

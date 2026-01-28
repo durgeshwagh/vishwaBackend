@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const Notice = require('../models/Notice');
-const { verifyToken } = require('../middleware/authMiddleware');
+const { verifyToken, checkPermission } = require('../middleware/authMiddleware');
 const multer = require('multer');
 
 // Configure Multer for File Uploads
@@ -62,12 +62,8 @@ const upload = multer({ storage });
  *       201:
  *         description: Notice created
  */
-router.post('/', verifyToken, upload.single('file'), async (req, res) => {
+router.post('/', verifyToken, checkPermission('notices.manage'), upload.single('file'), async (req, res) => {
     try {
-        if (!['Admin', 'SuperAdmin'].includes(req.user.role)) {
-            return res.status(403).json({ message: 'Access Denied' });
-        }
-
         const { title, message, type, target, recipients } = req.body;
         let fileUrl = '';
 
@@ -116,11 +112,8 @@ router.post('/', verifyToken, upload.single('file'), async (req, res) => {
  *       200:
  *         description: List of sent notices
  */
-router.get('/sent', verifyToken, async (req, res) => {
+router.get('/sent', verifyToken, checkPermission('notices.manage'), async (req, res) => {
     try {
-        if (!['Admin', 'SuperAdmin'].includes(req.user.role)) {
-            return res.status(403).json({ message: 'Access Denied' });
-        }
         const notices = await Notice.find().sort({ createdAt: -1 });
         res.json(notices);
     } catch (err) {
