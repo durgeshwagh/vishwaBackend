@@ -99,6 +99,10 @@ const MemberSchema = new mongoose.Schema({
     talukaName: { type: String }, // Pre-resolved taluka name
     villageName: { type: String }, // Pre-resolved village name
     education: { type: String },
+    occupationType: { type: String }, // Job, Business, etc.
+    spouseEducation: { type: String },
+    spouseOccupation: { type: String },
+    spouseOccupationType: { type: String },
     height: { type: String },
     prefix: { type: String }, // Pre-calculated or separate prefix
     lifeStatus: { type: String, enum: ['Alive', 'Deceased'], default: 'Alive' },

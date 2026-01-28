@@ -29,7 +29,7 @@ const cacheService = require('../services/cache.service');
  */
 const Fund = require('../models/Fund');
 const Member = require('../models/Member'); // We need this to populate name
-const { verifyToken } = require('../middleware/authMiddleware');
+const { verifyToken, checkPermission } = require('../middleware/authMiddleware');
 
 /**
  * @swagger
@@ -77,12 +77,8 @@ router.get('/', async (req, res) => {
  *       201:
  *         description: Fund entry created
  */
-router.post('/', verifyToken, async (req, res) => {
+router.post('/', verifyToken, checkPermission('funds.manage'), async (req, res) => {
     try {
-        if (!['Admin', 'SuperAdmin'].includes(req.user.role)) {
-            return res.status(403).json({ message: 'Access Denied' });
-        }
-
         const { memberId, amount, type, date, description } = req.body;
 
         const newFund = new Fund({

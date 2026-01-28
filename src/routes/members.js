@@ -474,7 +474,7 @@ function mapFlatToNested(payload) {
 
     if (sfn) {
         result.spouseName = sfn;
-        result.spouseMiddleName = smn;
+        result.spouseMiddleName = smn; // FIXED: Ensure propagated
         result.spouseLastName = sln;
         result.spousePrefix = sp;
         
@@ -897,13 +897,16 @@ router.post('/', verifyToken, checkPermission('member.create'), upload.fields([{
                     maritalStatus: 'Married',
                     familyId: 'Unassigned', // Separate Birth Family
                     photoUrl: payload.spousePhotoUrl,
-                    // Legacy fields for backward compatibility if needed, though model should handle mapping if virtuals existed
+                    // Legacy fields for backward compatibility
                     firstName: payload.spouseName,
+                    middleName: payload.spouseMiddleName || '', // FIXED: Added root middleName
                     lastName: payload.spouseLastName || (payload.gender === 'Male' ? payload.lastName : ''),
                     gender: payload.spouseGender || (payload.gender === 'Male' ? 'Female' : 'Male'),
                     dob: payload.spouseDob || payload.dob,
+                    
                     // Calculate Spouse's Own Full Name
                     fullName: `${payload.spousePrefix ? payload.spousePrefix.trim() + ' ' : ''}${payload.spouseName} ${payload.spouseMiddleName ? payload.spouseMiddleName.trim() + ' ' : ''}${payload.spouseLastName || (payload.gender === 'Male' ? payload.lastName : '')}`.replace(/\s+/g, ' ').trim(),
+                    
                     // Reciprocal Spouse Details (So the spouse record points back to the main member)
                     spouseName: savedMember.firstName,
                     spouseMiddleName: savedMember.middleName,
@@ -1315,13 +1318,13 @@ router.get('/stats/dashboard', verifyToken, checkPermission('member.view'), asyn
                         eduCategory: {
                             $switch: {
                                 branches: [
-                                   { case: { $regexMatch: { input: "$education", regex: /doctor|mbbs|phd|md/i } }, then: "Doctor" },
-                                   { case: { $regexMatch: { input: "$education", regex: /engineer|b\.e|b\.tech|m\.tech/i } }, then: "Engineer" },
-                                   { case: { $regexMatch: { input: "$education", regex: /post.*graduate|master|m\.a|m\.sc|m\.com|mba|mca/i } }, then: "Post Graduate" },
-                                   { case: { $regexMatch: { input: "$education", regex: /graduate|bachelor|b\.a|b\.sc|b\.com|bca|bba/i } }, then: "Graduate" },
+                                   { case: { $regexMatch: { input: "$education", regex: /doctor|mbbs|phd|md|bams|bhms/i } }, then: "Doctor" },
+                                   { case: { $regexMatch: { input: "$education", regex: /engineer|b\.?\s*e|b\.?\s*tech|m\.?\s*tech|diploma/i } }, then: "Engineer" },
+                                   { case: { $regexMatch: { input: "$education", regex: /post.*graduate|master|m\.?\s*a|m\.?\s*sc|m\.?\s*com|mba|mca|pg/i } }, then: "Post Graduate" },
+                                   { case: { $regexMatch: { input: "$education", regex: /graduate|bachelor|b\.?\s*a|b\.?\s*sc|b\.?\s*com|bca|bba/i } }, then: "Graduate" },
                                    { case: { $regexMatch: { input: "$education", regex: /12th|hsc|inter/i } }, then: "12th" },
                                    { case: { $regexMatch: { input: "$education", regex: /10th|ssc|matric/i } }, then: "10th" },
-                                   { case: { $regexMatch: { input: "$education", regex: /5th|6th|7th|8th|9th/i } }, then: "5th-9th" }
+                                   { case: { $regexMatch: { input: "$education", regex: /[5-9]th|primary/i } }, then: "Primary (5th-9th)" }
                                 ],
                                 default: "Other"
                             }

@@ -379,6 +379,36 @@ router.post('/verify-otp', async (req, res) => {
     }
 });
 
+/**
+ * @swagger
+ * /api/auth/profile:
+ *   get:
+ *     summary: Get current logged in user profile
+ *     tags: [Auth]
+ *     responses:
+ *       200:
+ *         description: Current user profile
+ */
+router.get('/profile', verifyToken, async (req, res) => {
+    try {
+        const user = await User.findById(req.user.id);
+        if (!user) return res.status(404).json({ message: 'User not found' });
+        
+        // Return similar structure to login
+        res.json({
+            id: user._id,
+            username: user.username,
+            name: user.name || user.username,
+            role: user.role,
+            email: user.email,
+            permissions: user.permissions,
+            memberId: user.memberId
+        });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 // Admin: Get Pending Users
 router.get('/pending-users', async (req, res) => {
     try {
