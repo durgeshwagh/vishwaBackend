@@ -63,6 +63,24 @@ const upload = multer({
     limits: { fileSize: 10 * 1024 * 1024 } // 10MB
 });
 
+// Wrapper to handle Multer errors
+const uploadMiddleware = (fields) => (req, res, next) => {
+    const uploadStep = upload.fields(fields);
+    uploadStep(req, res, (err) => {
+        if (err instanceof multer.MulterError) {
+            // A Multer error occurred when uploading.
+            console.error('[Multer Error]', err);
+            return res.status(400).json({ message: 'File Upload Error: ' + err.message, code: err.code });
+        } else if (err) {
+            // An unknown error occurred when uploading.
+            console.error('[Upload Error]', err);
+            return res.status(500).json({ message: 'Unknown Upload Error: ' + err.message });
+        }
+        // Everything went fine.
+        next();
+    });
+};
+
 /**
  * @swagger
  * /api/members:
@@ -572,11 +590,9 @@ async function upsertMemberRecursive(memberData, context = {}) {
         if (data.spouse) {
             let spouseData = typeof data.spouse === 'string' ? JSON.parse(data.spouse) : data.spouse;
 
-            // CRITICAL CHANGE: Spouse does NOT inherit familyId (Birth Family)
-            // Unless explicitly provided, spouse gets a new Family ID or 'Unassigned'
-            // But if we are recursively creating, maybe we don't have their birth family info.
-            // We leave it as is if provided, else 'Unassigned'.
-            if (!spouseData.familyId) spouseData.familyId = 'Unassigned';
+            // CRITICAL CHANGE (User Request): Spouse inherits Member's Family ID (Same Household)
+            // Unless explicitly provided (which implies Birth Family context), spouse joins the member's family unit.
+            if (!spouseData.familyId) spouseData.familyId = savedMember.familyId;
 
             // Map Spouse Data Flat -> Nested
             spouseData = mapFlatToNested(spouseData);
@@ -726,7 +742,7 @@ async function upsertMemberRecursive(memberData, context = {}) {
  *       201:
  *         description: Member created
  */
-router.post('/', verifyToken, checkPermission('member.create'), upload.fields([{ name: 'photo', maxCount: 1 }, { name: 'spousePhoto', maxCount: 1 }]), async (req, res) => {
+router.post('/', verifyToken, checkPermission('member.create'), uploadMiddleware([{ name: 'photo', maxCount: 1 }, { name: 'spousePhoto', maxCount: 1 }]), async (req, res) => {
     try {
         const payload = req.body;
 
@@ -895,7 +911,7 @@ router.post('/', verifyToken, checkPermission('member.create'), upload.fields([{
                         full_address: payload.address
                     },
                     maritalStatus: 'Married',
-                    familyId: 'Unassigned', // Separate Birth Family
+                    familyId: savedMember.familyId, // Inherit Family ID (Part of same household/tree)
                     photoUrl: payload.spousePhotoUrl,
                     // Legacy fields for backward compatibility
                     firstName: payload.spouseName,
@@ -1054,7 +1070,7 @@ router.post('/', verifyToken, checkPermission('member.create'), upload.fields([{
  *       200:
  *         description: Member updated
  */
-router.put('/:id', verifyToken, checkPermission('member.edit'), upload.fields([
+router.put('/:id', verifyToken, checkPermission('member.edit'), uploadMiddleware([
     { name: 'photo', maxCount: 1 },
     { name: 'spousePhoto', maxCount: 1 }
 ]), async (req, res) => {
