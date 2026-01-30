@@ -250,12 +250,82 @@ router.get('/tree-data/:memberId', verifyToken, async (req, res) => {
             });
         }
 
+        // 3.6 Ancestors (Parents of Target/Core who are NOT in current set)
+        // This is crucial for Married Daughters to link back to their birth family
+        const parentIdsToFetch = [];
+        
+        const loadedIds = new Set([
+            ...coreIds.map(id => id.toString()),
+            ...descendantsIds.map(id => id.toString()),
+            ...level2Descendants.map(m => m._id.toString())
+        ]);
+
+        console.log(`Debug Tree: Loaded ${loadedIds.size} IDs. Checking Ancestors for ${targetMember.firstName}...`);
+
+        // Check Target's Parents (Crucial for Married Daughter)
+        if (targetMember.fatherId) {
+            const fId = targetMember.fatherId.toString();
+            if (!loadedIds.has(fId)) {
+                console.log(`Debug Tree: Fetching missing Father: ${fId}`);
+                parentIdsToFetch.push(fId);
+            }
+        }
+        if (targetMember.motherId) {
+            const mId = targetMember.motherId.toString();
+            if (!loadedIds.has(mId)) {
+                console.log(`Debug Tree: Fetching missing Mother: ${mId}`);
+                parentIdsToFetch.push(mId);
+            }
+        }
+
+        const ancestors = await Member.find({ _id: { $in: parentIdsToFetch } });
+        console.log(`Debug Tree: Found ${ancestors.length} ancestors.`);
+
+        // 3.7 Spouse's Ancestors (For Married Women context)
+        // If target is married, we should also try to fetch the spouse's parents if they are not loaded
+        if (targetMember.spouseId) {
+             const spouseIdStr = targetMember.spouseId.toString();
+             // We might have the spouse in coreFamily or descendants, but maybe not their parents
+             // Let's find the spouse first (if loaded) or fetch if missing? 
+             // Usually spouse is in family, but let's be safe.
+             
+             let spouse = coreFamily.find(m => m._id.toString() === spouseIdStr) || 
+                          distinctFamilyDescendants.find(m => m._id.toString() === spouseIdStr);
+             
+             if (!spouse) {
+                 // Spouse not in loaded set? Fetch them.
+                  spouse = await Member.findById(targetMember.spouseId);
+                  if (spouse) {
+                      // Add to the list to be returned later? 
+                      // actually we merge all later. 
+                      // We need to fetch THEIR parents.
+                  }
+             }
+
+             if (spouse) {
+                 const spouseParentIds = [];
+                 if (spouse.fatherId && !loadedIds.has(spouse.fatherId.toString()) && !parentIdsToFetch.includes(spouse.fatherId.toString())) {
+                     spouseParentIds.push(spouse.fatherId);
+                 }
+                 if (spouse.motherId && !loadedIds.has(spouse.motherId.toString()) && !parentIdsToFetch.includes(spouse.motherId.toString())) {
+                     spouseParentIds.push(spouse.motherId);
+                 }
+                 
+                 if (spouseParentIds.length > 0) {
+                     console.log(`Debug Tree: Fetching Spouse's Ancestors: ${spouseParentIds.join(', ')}`);
+                     const spouseAncestors = await Member.find({ _id: { $in: spouseParentIds } });
+                     ancestors.push(...spouseAncestors);
+                 }
+             }
+        }
+
         // 4. Marriages
         // We need marriages for EVERYONE found so far to display spouses
         const allSubjectIds = [
             ...coreIds, 
             ...descendantsIds, 
-            ...level2Descendants.map(m => m._id)
+            ...level2Descendants.map(m => m._id),
+            ...ancestors.map(m => m._id)
         ];
 
         const marriages = await Marriage.find({
@@ -283,13 +353,18 @@ router.get('/tree-data/:memberId', verifyToken, async (req, res) => {
         const allMembers = [
             ...coreFamily, 
             ...distinctFamilyDescendants, 
-            ...level2Descendants, 
+            ...level2Descendants,
+            ...ancestors, 
             ...spouses
         ];
 
         // Convert to Plain Objects to allow mutation
         const memberMap = new Map();
-        allMembers.forEach(m => memberMap.set(m._id.toString(), m.toObject()));
+        allMembers.forEach(m => {
+             // Handle Mongoose Docs vs Plain Objects safely
+             const obj = (m.toObject && typeof m.toObject === 'function') ? m.toObject() : m;
+             memberMap.set(obj._id.toString(), obj);
+        });
 
         // Dynamic Linking of Spouse IDs
         marriages.forEach(m => {
@@ -306,7 +381,8 @@ router.get('/tree-data/:memberId', verifyToken, async (req, res) => {
         });
 
         const finalMemberList = Array.from(memberMap.values());
-
+        
+        res.setHeader('X-Tree-Logic', 'ancestors-included');
         res.json(finalMemberList);
 
     } catch (err) {

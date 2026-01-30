@@ -207,6 +207,9 @@ router.get('/', verifyToken, checkPermission('member.view'), async (req, res) =>
             andConditions.push({
                 $or: [
                     { fullName: fullNameRegex },
+                    { firstName: searchRegex }, // Added
+                    { lastName: searchRegex }, // Added
+                    { middleName: searchRegex }, // Added
                     { stateName: searchRegex },
                     { districtName: searchRegex },
                     { talukaName: searchRegex },
@@ -555,6 +558,10 @@ function mapFlatToNested(payload) {
     if (payload.districtName) result.districtName = payload.districtName;
     if (payload.talukaName) result.talukaName = payload.talukaName;
     if (payload.villageName) result.villageName = payload.villageName;
+
+    // 8. Photo URLs (Explicitly Persist)
+    if (payload.photoUrl) result.photoUrl = payload.photoUrl;
+    if (payload.spousePhotoUrl) result.spousePhotoUrl = payload.spousePhotoUrl;
 
     return result;
 }
@@ -1004,31 +1011,92 @@ router.post('/', verifyToken, checkPermission('member.create'), uploadMiddleware
         // ---------------------------------------------------------
         // AUTO-CREATE USER
         // ---------------------------------------------------------
+        // ---------------------------------------------------------
+        // AUTO-CREATE USER
+        // ---------------------------------------------------------
         try {
             const User = require('../models/User');
             const bcrypt = require('bcryptjs');
 
-            const mobilePassword = payload.mobile || '123456'; // Default password
-            const hashedPassword = await bcrypt.hash(mobilePassword, 10);
+            const isAdmin = req.user && (req.user.role === 'Admin' || req.user.role === 'SuperAdmin');
 
-            const newUser = new User({
-                username: savedMember.memberId, // Login with Member ID
-                password: hashedPassword,
-                name: `${savedMember.firstName} ${savedMember.lastName}`,
-                email: savedMember.email, // Can be duplicate/null, User model handles sparse unique
-                mobile: savedMember.mobile,
-                role: 'Member',
-                isVerified: false, // PENDING ADMIN APPROVAL
-                memberId: savedMember.memberId
-            });
+            if (isAdmin) {
+                 // ADMIN LOGIC: Create Verified User with Name-based Username
+                 // 1. Generate Username (firstname + lastname, lowercase)
+                 const fName = (payload.firstName || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+                 const lName = (payload.lastName || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+                 let baseUsername = `${fName}${lName}`;
+                 
+                 if (!baseUsername) baseUsername = `user${savedMember.memberId}`; // Fallback
 
-            await newUser.save();
-            console.log(`Auto-created User for Member ${savedMember.memberId}`);
-        } catch (userErr) {
-            console.error('Failed to auto-create user:', userErr.message);
-            // We do NOT fail the member creation, but maybe log it visibly
+                 // Ensure uniqueness
+                 let username = baseUsername;
+                 let counter = 1;
+                 while (await User.findOne({ username })) {
+                     username = `${baseUsername}${counter}`;
+                     counter++;
+                 }
+
+                 // 2. Hash Password (Default: 123456)
+                 const hashedPassword = await bcrypt.hash('123456', 10);
+
+                 // 3. Create User
+                 const newUser = new User({
+                     username: username,
+                     password: hashedPassword,
+                     email: payload.email || undefined, // Use email if provided (might be sparse unique)
+                     mobile: payload.mobile || payload.phone || undefined,
+                     role: 'Member',
+                     isVerified: true, // Auto-verified by Admin
+                     isActive: true,
+                     name: savedMember.fullName || `${savedMember.firstName} ${savedMember.lastName}`,
+                     memberId: savedMember._id, // Link using ObjectId
+                     permissions: ['member.view', 'member.edit'] // Basic permissions
+                 });
+
+                 await newUser.save();
+                 console.log(`[Auto-Create] Created Admin-Verified User '${username}' for Member '${savedMember.fullName}'`);
+
+            } else {
+                // DEFAULT LOGIC: Create Pending User with ID-based Username
+                const mobilePassword = payload.mobile || '123456'; 
+                const hashedPassword = await bcrypt.hash(mobilePassword, 10);
+
+                const newUser = new User({
+                    username: savedMember.memberId, // Login with Member ID
+                    password: hashedPassword,
+                    name: `${savedMember.firstName} ${savedMember.lastName}`,
+                    email: savedMember.email, 
+                    mobile: savedMember.mobile,
+                    role: 'Member',
+                    isVerified: false, // PENDING ADMIN APPROVAL
+                    memberId: savedMember.memberId
+                });
+
+                await newUser.save();
+                console.log(`[Auto-Create] Created Pending User '${savedMember.memberId}' for Member '${savedMember.memberId}'`);
+            }
+        } catch (err) {
+            console.error(`[Auto-Create] Failed to create user for member ${savedMember.memberId}:`, err.message);
         }
+
         // ---------------------------------------------------------
+
+
+        // ---------------------------------------------------------
+        // AUTO-LINK USER TO MEMBER (If User has no profile)
+        // ---------------------------------------------------------
+        if (req.user && req.user.id) {
+            const User = require('../models/User');
+            // Fetch fresh user to check current linkage status
+            const currentUser = await User.findById(req.user.id);
+            
+            if (currentUser && !currentUser.memberId) {
+                console.log(`[Auto-Link] Linking User ${currentUser.username} to new Member ${savedMember.memberId}`);
+                currentUser.memberId = savedMember._id; // Using ObjectId for robust linking (consistent with link_admin.js)
+                await currentUser.save();
+            }
+        }
 
         res.status(201).json(savedMember);
     } catch (err) {

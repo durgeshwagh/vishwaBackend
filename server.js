@@ -16,6 +16,7 @@ const familyRoutes = require('./src/routes/family');
 const adminRoutes = require('./src/routes/admin');
 const locationRoutes = require('./src/routes/locations');
 const unionRoutes = require('./src/routes/unions'); // NEW: Union routes
+const utilRoutes = require('./src/routes/utils');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -133,6 +134,7 @@ app.use('/api/family', familyRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/locations', locationRoutes);
 app.use('/api/unions', unionRoutes); // NEW: Union routes
+app.use('/api/utils', utilRoutes);
 app.use('/uploads', express.static('uploads', {
     setHeaders: (res, path, stat) => {
         res.set('Cross-Origin-Resource-Policy', 'cross-origin');
@@ -140,7 +142,7 @@ app.use('/uploads', express.static('uploads', {
 }));
 
 app.get('/', (req, res) => {
-    res.send('Backend is running successfully!');
+    res.send('Backend Modified');
 });
 
 // Database Connection

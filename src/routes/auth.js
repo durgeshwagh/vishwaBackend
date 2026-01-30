@@ -381,6 +381,58 @@ router.post('/verify-otp', async (req, res) => {
 
 /**
  * @swagger
+ * /api/auth/change-password:
+ *   post:
+ *     summary: Change current user password
+ *     tags: [Auth]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - currentPassword
+ *               - newPassword
+ *             properties:
+ *               currentPassword:
+ *                 type: string
+ *               newPassword:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Password updated successfully
+ *       400:
+ *         description: Invalid current password or weak new password
+ */
+router.post('/change-password', verifyToken, async (req, res) => {
+    try {
+        const { currentPassword, newPassword } = req.body;
+        const userId = req.user.id; // From token
+
+        if (!newPassword || newPassword.length < 6) {
+            return res.status(400).json({ message: 'New password must be at least 6 characters long' });
+        }
+
+        const user = await User.findById(userId).select('+password');
+        if (!user) return res.status(404).json({ message: 'User not found' });
+
+        const isMatch = await bcrypt.compare(currentPassword, user.password);
+        if (!isMatch) {
+            return res.status(400).json({ message: 'Incorrect current password' });
+        }
+
+        user.password = await bcrypt.hash(newPassword, 10);
+        await user.save();
+
+        res.json({ message: 'Password updated successfully' });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+/**
+ * @swagger
  * /api/auth/profile:
  *   get:
  *     summary: Get current logged in user profile
@@ -509,16 +561,17 @@ router.put('/users/:id/permissions', verifyToken, async (req, res) => {
             return res.status(403).json({ message: 'Access Denied' });
         }
         const { id } = req.params;
-        const { permissions, role } = req.body;
+        const { permissions, role, memberId } = req.body;
 
         const updateData = {};
         if (permissions) updateData.permissions = permissions;
         if (role) updateData.role = role;
+        if (memberId !== undefined) updateData.memberId = memberId; // Allow linking/unlinking
 
         const user = await User.findByIdAndUpdate(id, updateData, { new: true }).select('-password');
         if (!user) return res.status(404).json({ message: 'User not found' });
 
-        res.json({ message: 'Permissions updated', user });
+        res.json({ message: 'Permissions and details updated', user });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
@@ -543,6 +596,29 @@ router.put('/users/:id/reset-password', verifyToken, async (req, res) => {
         if (!user) return res.status(404).json({ message: 'User not found' });
 
         res.json({ message: 'Password reset successfully' });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Admin: Delete User
+router.delete('/users/:id', verifyToken, async (req, res) => {
+    try {
+        if (!['SuperAdmin', 'Admin'].includes(req.user.role)) {
+            return res.status(403).json({ message: 'Access Denied' });
+        }
+
+        const { id } = req.params;
+
+        // Prevent Self-Deletion
+        if (req.user.id === id) {
+            return res.status(400).json({ message: 'You cannot delete yourself.' });
+        }
+
+        const user = await User.findByIdAndDelete(id);
+        if (!user) return res.status(404).json({ message: 'User not found' });
+
+        res.json({ message: 'User deleted successfully', userId: id });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
