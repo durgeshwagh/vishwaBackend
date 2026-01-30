@@ -45,7 +45,8 @@ const PERMISSIONS = [
         screen: "Funds & Donations",
         key: "screen.funds",
         actions: [
-            { id: "funds.manage", label: "Manage Funds & Expenses" },
+            { id: "funds.manage", label: "Manage Funds & Expenses (Full Access)" },
+            { id: "funds.create", label: "Add Funds/Donations" },
             { id: "donations.view", label: "View Donations" },
             { id: "notices.view", label: "View Notices" },
             { id: "notices.manage", label: "Manage Notices/News" }
