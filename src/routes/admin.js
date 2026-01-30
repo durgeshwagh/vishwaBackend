@@ -42,7 +42,12 @@ const verifyAdmin = async (req, res, next) => {
  */
 router.get('/users', verifyToken, verifyAdmin, async (req, res) => {
     try {
-        const { page = 1, limit = 20, search = '' } = req.query;
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 20;
+        const search = req.query.search || '';
+        
+        console.log(`[Admin] Get Users - Page: ${page}, Limit: ${limit}, Search: '${search}', Status: ${req.query.status}`);
+
         const query = {};
 
         if (search) {
@@ -52,6 +57,17 @@ router.get('/users', verifyToken, verifyAdmin, async (req, res) => {
                 { memberId: { $regex: search, $options: 'i' } }
             ];
         }
+
+        // Add Status Filter
+        const status = req.query.status ? req.query.status.trim() : '';
+        if (status === 'pending') {
+            query.isVerified = { $ne: true }; // Covers false, null, and undefined
+        } else if (status === 'verified') {
+            query.isVerified = true;
+        }
+
+
+        console.log('[Admin] MongoDB Query:', JSON.stringify(query));
 
         const users = await User.find(query)
             .select('-password -otp -otpExpires') // Exclude sensitive fields

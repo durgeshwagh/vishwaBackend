@@ -142,11 +142,21 @@ router.get('/', verifyToken, checkPermission('member.view'), async (req, res) =>
         }
 
         // Filter by Matrimony Privacy Flag
-        const { showOnMatrimony } = req.query;
+        const { showOnMatrimony, gender, maritalStatus } = req.query;
         if (showOnMatrimony && showOnMatrimony.toString().toLowerCase().trim() === 'true') {
             // Target the correct nested path in MongoDB
             query['personal_info.showOnMatrimony'] = true;
             console.log('[DEBUG] Filtering for Matrimony Portal (Visible Only)');
+        }
+
+        // Gender Filter (Exact Match)
+        if (gender) {
+            query.gender = gender.trim(); 
+        }
+
+        // Marital Status Filter (Exact Match)
+        if (maritalStatus) {
+            query.maritalStatus = maritalStatus.trim();
         }
 
         // ROLE-BASED ACCESS CONTROL
@@ -1513,6 +1523,33 @@ router.get('/stats/dashboard', verifyToken, checkPermission('member.view'), asyn
         res.json(stats);
     } catch (err) {
         console.error('Dashboard stats error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+/**
+ * PATCH /api/members/:id/matrimony-status
+ * Update showOnMatrimony flag
+ */
+router.patch('/:id/matrimony-status', verifyToken, checkPermission('member.update'), async (req, res) => {
+    try {
+        const { showOnMatrimony } = req.body;
+        
+        const member = await Member.findByIdAndUpdate(
+            req.params.id, 
+            { 
+                'personal_info.showOnMatrimony': showOnMatrimony,
+                showOnMatrimony: showOnMatrimony // Sync root field
+            }, 
+            { new: true }
+        );
+
+        if (!member) {
+            return res.status(404).json({ message: 'Member not found' });
+        }
+
+        res.json({ message: 'Matrimony status updated', member });
+    } catch (err) {
         res.status(500).json({ error: err.message });
     }
 });

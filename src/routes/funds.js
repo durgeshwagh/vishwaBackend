@@ -99,4 +99,37 @@ router.post('/', verifyToken, checkPermission('funds.manage'), async (req, res) 
     }
 });
 
+/**
+ * @swagger
+ * /api/funds/{id}:
+ *   delete:
+ *     summary: Delete a fund entry
+ *     tags: [Funds]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Fund entry deleted
+ */
+router.delete('/:id', verifyToken, checkPermission('funds.delete'), async (req, res) => {
+    try {
+        const deletedFund = await Fund.findByIdAndDelete(req.params.id);
+        if (!deletedFund) {
+            return res.status(404).json({ message: 'Donation not found' });
+        }
+        
+        // Invalidate cache
+        cacheService.invalidateDashboard();
+        res.json({ message: 'Donation deleted successfully', id: req.params.id });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 module.exports = router;
