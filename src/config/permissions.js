@@ -14,7 +14,8 @@ const PERMISSIONS = [
             { id: "member.view", label: "View Members List" },
             { id: "member.create", label: "Add New Member" },
             { id: "member.edit", label: "Edit Member" },
-            { id: "member.delete", label: "Delete Member" }
+            { id: "member.delete", label: "Delete Member" },
+            { id: "primary.view", label: "View Primary Members List" }
         ]
     },
     {
@@ -30,6 +31,24 @@ const PERMISSIONS = [
         actions: [
             { id: "family.view", label: "View Family Trees" },
             { id: "family.edit", label: "Edit Family Structures" }
+        ]
+    },
+    {
+        screen: "Matrimonial Portal",
+        key: "screen.matrimony",
+        actions: [
+            { id: "matrimony.view", label: "View Matrimony Portal" },
+            { id: "matrimony.create", label: "Add Matrimony Profiles" }
+        ]
+    },
+    {
+        screen: "Funds & Donations",
+        key: "screen.funds",
+        actions: [
+            { id: "funds.manage", label: "Manage Funds & Expenses" },
+            { id: "donations.view", label: "View Donations" },
+            { id: "notices.view", label: "View Notices" },
+            { id: "notices.manage", label: "Manage Notices/News" }
         ]
     },
     {

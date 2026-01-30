@@ -487,11 +487,11 @@ router.put('/approve-user/:id', async (req, res) => {
         if (!['SuperAdmin', 'Admin'].includes(decoded.role)) return res.status(403).json({ message: 'Access Denied' });
 
         const { id } = req.params;
-        const { role, permissions } = req.body;
+        const { role, permissions, memberId } = req.body;
 
         const user = await User.findByIdAndUpdate(
             id,
-            { isVerified: true, role: role || 'Member', permissions: permissions || [] },
+            { isVerified: true, role: role || 'Member', permissions: permissions || [], memberId },
             { new: true }
         ).select('-password');
 

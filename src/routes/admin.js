@@ -133,15 +133,18 @@ router.put('/users/:id/role', verifyToken, verifyAdmin, async (req, res) => {
 // Update Permissions
 router.put('/users/:id/permissions', verifyToken, verifyAdmin, async (req, res) => {
     try {
-        const { permissions } = req.body; // Array of strings
+        const { permissions, role, memberId } = req.body;
 
-        const user = await User.findById(req.params.id);
+        const updateData = {};
+        if (permissions) updateData.permissions = permissions;
+        if (role) updateData.role = role;
+        // Allow linking (string) or unlinking (null)
+        if (memberId !== undefined) updateData.memberId = memberId;
+
+        const user = await User.findByIdAndUpdate(req.params.id, updateData, { new: true }).select('-password');
         if (!user) return res.status(404).json({ message: 'User not found' });
 
-        user.permissions = permissions || [];
-        await user.save();
-
-        res.json({ message: 'Permissions updated successfully', user });
+        res.json({ message: 'Permissions and details updated', user });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
