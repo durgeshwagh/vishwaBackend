@@ -232,7 +232,7 @@ router.post('/login', async (req, res) => {
                 role: user.role,
                 email: user.email,
                 permissions: user.permissions,
-                memberId: linkedMember ? linkedMember._id : null,
+                memberId: linkedMember ? linkedMember._id : user.memberId,
                 memberDetails: linkedMember ? {
                     id: linkedMember._id,
                     memberId: linkedMember.memberId,
