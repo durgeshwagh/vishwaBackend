@@ -1133,11 +1133,20 @@ router.put('/:id', verifyToken, checkPermission('member.edit'), uploadMiddleware
     { name: 'spousePhoto', maxCount: 1 }
 ]), async (req, res) => {
     try {
-        const mainId = req.params.id;
-        // Strip id from req.body to prevent Mongoose immutable field errors
-        let { id, _id, ...updates } = req.body;
+        const idParam = req.params.id;
         
-        console.log(`[DEBUG] PUT /members/${mainId} - Files:`, req.files ? Object.keys(req.files) : 'None');
+        let member;
+        if (idParam.startsWith('M')) {
+            member = await Member.findOne({ memberId: idParam });
+        } else {
+            member = await Member.findById(idParam).catch(() => null);
+        }
+
+        if (!member) return res.status(404).json({ message: 'Member not found' });
+
+        const mainId = member._id.toString();
+        // Strip id and memberId from req.body to prevent Mongoose immutable field errors or logic collisions
+        let { id, _id, memberId, ...updates } = req.body;
 
         // Handle File Upload (Memory Storage - Convert to Base64)
         if (req.files) {
@@ -1152,11 +1161,6 @@ router.put('/:id', verifyToken, checkPermission('member.edit'), uploadMiddleware
                 console.log('[Upload] Spouse Photo converted to Base64');
             }
         }
-        
-        console.log(`[DEBUG] PUT /members/${mainId} Final Updates:`, JSON.stringify(updates, null, 2));
-
-        const member = await Member.findById(mainId);
-        if (!member) return res.status(404).json({ message: 'Member not found' });
 
         // Logic: New Family ID if Marriage Status changes
         if (updates.maritalStatus === 'Married' && member.maritalStatus !== 'Married' && !member.fatherId && !member.motherId) {
@@ -1187,7 +1191,7 @@ router.put('/:id', verifyToken, checkPermission('member.edit'), uploadMiddleware
 
         // Use Recursive Helper
         // Inject ID to ensure upsertMemberRecursive performs an UPDATE instead of a matching/new-create
-        updates._id = req.params.id;
+        updates._id = mainId;
 
         const updatedMember = await upsertMemberRecursive(updates, {});
 
