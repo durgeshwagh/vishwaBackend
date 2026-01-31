@@ -3,7 +3,6 @@ const Event = require('../models/Event');
 const { verifyToken, checkPermission } = require('../middleware/authMiddleware');
 const multer = require('multer');
 const path = require('path');
-const fs = require('fs');
 const router = express.Router();
 
 // Multer Configuration for Events (Memory Storage for Serverless)

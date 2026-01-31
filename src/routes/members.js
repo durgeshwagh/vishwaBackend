@@ -1186,6 +1186,9 @@ router.put('/:id', verifyToken, checkPermission('member.edit'), uploadMiddleware
         }
 
         // Use Recursive Helper
+        // Inject ID to ensure upsertMemberRecursive performs an UPDATE instead of a matching/new-create
+        updates._id = req.params.id;
+
         const updatedMember = await upsertMemberRecursive(updates, {});
 
         // Invalidate dashboard cache when member is updated
