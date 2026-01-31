@@ -3,16 +3,8 @@ const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
 const bodyParser = require('body-parser');
-const path = require('path');
-const fs = require('fs');
 require('dotenv').config();
 
-// Ensure uploads directory exists globally
-const uploadDir = path.join(process.cwd(), 'uploads');
-if (!fs.existsSync(uploadDir)) {
-    console.log(`[System] Creating missing uploads directory at: ${uploadDir}`);
-    fs.mkdirSync(uploadDir, { recursive: true });
-}
 
 
 const authRoutes = require('./src/routes/auth');
@@ -152,7 +144,7 @@ app.use('/uploads', express.static('uploads', {
 }));
 
 app.get('/', (req, res) => {
-    res.send('Backend Modified');
+    res.send('Backend Modified: 2026-01-31 15:35 GMT');
 });
 
 // Database Connection

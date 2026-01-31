@@ -4,16 +4,9 @@ const Marriage = require('../models/Marriage');
 const { verifyToken, checkPermission } = require('../middleware/authMiddleware');
 const multer = require('multer');
 const path = require('path');
-const fs = require('fs');
 const cacheService = require('../services/cache.service');
 const router = express.Router();
 
-// Ensure uploads directory exists (Absolute Path for Robustness)
-const uploadDir = path.join(process.cwd(), 'uploads');
-if (!fs.existsSync(uploadDir)) {
-    console.log(`[System] Creating missing uploads directory at: ${uploadDir}`);
-    fs.mkdirSync(uploadDir, { recursive: true });
-}
 
 /**
  * @swagger
@@ -55,16 +48,8 @@ if (!fs.existsSync(uploadDir)) {
  *         maritalStatus: Single
  */
 
-// Multer Configuration (Disk Storage for Optimization)
-const storage = multer.diskStorage({
-    destination: (req, file, cb) => {
-        cb(null, uploadDir);
-    },
-    filename: (req, file, cb) => {
-        const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-        cb(null, file.fieldname + '-' + uniqueSuffix + path.extname(file.originalname));
-    }
-});
+// Multer Configuration (Memory Storage for Serverless/Vercel compatibility)
+const storage = multer.memoryStorage();
 
 const upload = multer({ 
     storage: storage,
@@ -785,13 +770,15 @@ router.post('/', verifyToken, checkPermission('member.create'), uploadMiddleware
 
 
 
-        // Handle File Upload (Disk Storage - Store relative path)
+        // Handle File Upload (Memory Storage - Convert to Base64)
         if (req.files) {
             if (req.files['photo']) {
-                payload.photoUrl = `uploads/${req.files['photo'][0].filename}`;
+                const file = req.files['photo'][0];
+                payload.photoUrl = `data:${file.mimetype};base64,${file.buffer.toString('base64')}`;
             }
             if (req.files['spousePhoto']) {
-                payload.spousePhotoUrl = `uploads/${req.files['spousePhoto'][0].filename}`;
+                const file = req.files['spousePhoto'][0];
+                payload.spousePhotoUrl = `data:${file.mimetype};base64,${file.buffer.toString('base64')}`;
             }
         }
 
@@ -1152,15 +1139,17 @@ router.put('/:id', verifyToken, checkPermission('member.edit'), uploadMiddleware
         
         console.log(`[DEBUG] PUT /members/${mainId} - Files:`, req.files ? Object.keys(req.files) : 'None');
 
-        // Handle Files
+        // Handle File Upload (Memory Storage - Convert to Base64)
         if (req.files) {
             if (req.files['photo']) {
-                updates.photoUrl = `uploads/${req.files['photo'][0].filename}`;
-                console.log(`[DEBUG] Main Photo Uploaded: ${updates.photoUrl}`);
+                const file = req.files['photo'][0];
+                updates.photoUrl = `data:${file.mimetype};base64,${file.buffer.toString('base64')}`;
+                console.log('[Upload] Main Photo converted to Base64');
             }
             if (req.files['spousePhoto']) {
-                updates.spousePhotoUrl = `uploads/${req.files['spousePhoto'][0].filename}`;
-                console.log(`[DEBUG] Spouse Photo Uploaded: ${updates.spousePhotoUrl}`);
+                const file = req.files['spousePhoto'][0];
+                updates.spousePhotoUrl = `data:${file.mimetype};base64,${file.buffer.toString('base64')}`;
+                console.log('[Upload] Spouse Photo converted to Base64');
             }
         }
         

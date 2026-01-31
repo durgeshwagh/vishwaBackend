@@ -6,22 +6,8 @@ const path = require('path');
 const fs = require('fs');
 const router = express.Router();
 
-// Multer Configuration for Events (Absolute Path for Robustness)
-const uploadDir = path.join(process.cwd(), 'uploads', 'events');
-if (!fs.existsSync(uploadDir)) {
-    console.log(`[System] Creating missing events upload directory at: ${uploadDir}`);
-    fs.mkdirSync(uploadDir, { recursive: true });
-}
-
-const storage = multer.diskStorage({
-    destination: (req, file, cb) => {
-        cb(null, uploadDir);
-    },
-    filename: (req, file, cb) => {
-        const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-        cb(null, 'event-' + uniqueSuffix + path.extname(file.originalname));
-    }
-});
+// Multer Configuration for Events (Memory Storage for Serverless)
+const storage = multer.memoryStorage();
 
 const upload = multer({ 
     storage: storage,
@@ -98,11 +84,11 @@ router.post('/', verifyToken, checkPermission('events.manage'), upload.single('m
         const payload = { ...req.body };
         
         if (req.file) {
-            const mediaPath = `uploads/events/${req.file.filename}`;
+            const mediaBase64 = `data:${req.file.mimetype};base64,${req.file.buffer.toString('base64')}`;
             if (req.body.mediaType === 'Video') {
-                payload.videoUrl = mediaPath;
+                payload.videoUrl = mediaBase64;
             } else {
-                payload.imageUrl = mediaPath;
+                payload.imageUrl = mediaBase64;
             }
         }
 
@@ -169,12 +155,12 @@ router.put('/:id', verifyToken, checkPermission('events.manage'), upload.single(
         const updates = { ...req.body };
         
         if (req.file) {
-            const mediaPath = `uploads/events/${req.file.filename}`;
+            const mediaBase64 = `data:${req.file.mimetype};base64,${req.file.buffer.toString('base64')}`;
             if (req.body.mediaType === 'Video') {
-                updates.videoUrl = mediaPath;
+                updates.videoUrl = mediaBase64;
                 updates.imageUrl = ''; // Clear other one
             } else {
-                updates.imageUrl = mediaPath;
+                updates.imageUrl = mediaBase64;
                 updates.videoUrl = ''; // Clear other one
             }
         }

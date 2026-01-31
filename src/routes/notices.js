@@ -4,24 +4,9 @@ const Notice = require('../models/Notice');
 const { verifyToken, checkPermission } = require('../middleware/authMiddleware');
 const multer = require('multer');
 const path = require('path');
-const fs = require('fs');
 
-// Ensure uploads directory exists (Absolute Path for Robustness)
-const uploadDir = path.join(process.cwd(), 'uploads');
-if (!fs.existsSync(uploadDir)) {
-    console.log(`[System] Creating missing uploads directory at: ${uploadDir}`);
-    fs.mkdirSync(uploadDir, { recursive: true });
-}
-
-// Configure Multer for File Uploads
-const storage = multer.diskStorage({
-    destination: (req, file, cb) => {
-        cb(null, uploadDir);
-    },
-    filename: (req, file, cb) => {
-        cb(null, `notice-${Date.now()}-${file.originalname}`);
-    }
-});
+// Configure Multer for File Uploads (Memory Storage for Serverless)
+const storage = multer.memoryStorage();
 const upload = multer({ storage });
 
 /**
@@ -77,7 +62,7 @@ router.post('/', verifyToken, checkPermission('notices.manage'), upload.single('
         let fileUrl = '';
 
         if (req.file) {
-            fileUrl = `${req.protocol}://${req.get('host')}/uploads/${req.file.filename}`;
+            fileUrl = `data:${req.file.mimetype};base64,${req.file.buffer.toString('base64')}`;
         }
 
         let parsedRecipients = [];
@@ -167,7 +152,7 @@ router.post('/patrika', verifyToken, upload.single('file'), async (req, res) => 
             return res.status(400).json({ message: 'Recipient and File are required' });
         }
 
-        const fileUrl = `${req.protocol}://${req.get('host')}/uploads/${req.file.filename}`;
+        const fileUrl = `data:${req.file.mimetype};base64,${req.file.buffer.toString('base64')}`;
 
         const newNotice = new Notice({
             title: title || 'New Patrika Received',

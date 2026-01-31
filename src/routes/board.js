@@ -1,7 +1,6 @@
 const express = require('express');
 const router = express.Router();
 const path = require('path');
-const fs = require('fs');
 
 /**
  * @swagger
@@ -13,22 +12,8 @@ const BoardMember = require('../models/BoardMember');
 const { verifyToken } = require('../middleware/authMiddleware');
 const multer = require('multer');
 
-// Ensure uploads directory exists (Absolute Path for Robustness)
-const uploadDir = path.join(process.cwd(), 'uploads');
-if (!fs.existsSync(uploadDir)) {
-    console.log(`[System] Creating missing uploads directory at: ${uploadDir}`);
-    fs.mkdirSync(uploadDir, { recursive: true });
-}
-
-// Configure Multer for File Uploads (Photos)
-const storage = multer.diskStorage({
-    destination: (req, file, cb) => {
-        cb(null, uploadDir);
-    },
-    filename: (req, file, cb) => {
-        cb(null, `board-${Date.now()}-${file.originalname}`);
-    }
-});
+// Configure Multer for File Uploads (Memory Storage for Serverless)
+const storage = multer.memoryStorage();
 const upload = multer({ storage });
 
 /**
@@ -133,7 +118,7 @@ router.post('/', verifyToken, upload.single('photo'), async (req, res) => {
         let photoUrl = '';
 
         if (req.file) {
-            photoUrl = `${req.protocol}://${req.get('host')}/uploads/${req.file.filename}`;
+            photoUrl = `data:${req.file.mimetype};base64,${req.file.buffer.toString('base64')}`;
         }
 
         const newMember = new BoardMember({
@@ -166,7 +151,7 @@ router.put('/:id', verifyToken, upload.single('photo'), async (req, res) => {
         const updates = req.body;
 
         if (req.file) {
-            updates.photoUrl = `${req.protocol}://${req.get('host')}/uploads/${req.file.filename}`;
+            updates.photoUrl = `data:${req.file.mimetype};base64,${req.file.buffer.toString('base64')}`;
         }
 
         const updatedMember = await BoardMember.findByIdAndUpdate(id, updates, { new: true });
