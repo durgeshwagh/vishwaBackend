@@ -57,11 +57,19 @@ const router = express.Router();
  */
 router.post('/register', async (req, res) => {
     try {
-        const { username, password, name, email, mobile } = req.body;
+        let { username, password, name, email, mobile } = req.body;
+        
+        // Trim inputs
+        if (username) username = username.trim();
+        if (email) email = email.trim();
+        if (mobile) mobile = mobile.trim();
 
-        // Check if user exists
-        const existingUser = await User.findOne({ $or: [{ username }, { email }] });
-        if (existingUser) return res.status(400).json({ message: 'User already exists' });
+        // Check if user exists (Split check for better error message)
+        const userByUsername = await User.findOne({ username });
+        if (userByUsername) return res.status(400).json({ message: 'Username is already taken' });
+
+        const userByEmail = await User.findOne({ email });
+        if (userByEmail) return res.status(400).json({ message: 'Email is already registered' });
 
         // Hash password
         const hashedPassword = await bcrypt.hash(password, 10);
@@ -148,8 +156,10 @@ router.post('/create-user', verifyToken, async (req, res) => {
  */
 router.post('/login', async (req, res) => {
     try {
-        const { username, password } = req.body;
+        let { username, password } = req.body;
         console.log('[DEBUG] Login Payload:', JSON.stringify(req.body, null, 2));
+
+        if (username) username = username.trim();
 
         // Find user - optimized query using indexed fields
         const user = await User.findOne({

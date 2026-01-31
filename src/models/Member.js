@@ -197,7 +197,8 @@ MemberSchema.index({
     village: 'text',
     memberId: 'text',
     phone: 'text',
-    spouseMiddleName: 'text' // Added index
+    spouseMiddleName: 'text',
+    fullName: 'text' 
 });
 
 // Optimized Sort Indexes
@@ -207,6 +208,7 @@ MemberSchema.index({ isPrimary: 1 });
 
 // Performance Optimization Indexes (for member list page)
 MemberSchema.index({ firstName: 1, lastName: 1 }); // Name search and sorting
+MemberSchema.index({ fullName: 1 }); // Added index for $or search compatibility
 MemberSchema.index({ city: 1 }); // Location filtering
 MemberSchema.index({ phone: 1 }); // Phone search
 MemberSchema.index({ familyId: 1, isPrimary: 1 }); // Family queries with primary status

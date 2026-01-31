@@ -207,12 +207,8 @@ router.get('/', verifyToken, checkPermission('member.view'), async (req, res) =>
         if (search) {
             const safeSearch = escapeRegex(search.trim());
             
-            // 1. Text Search (Fastest - Matches whole words)
-            const textQuery = { $text: { $search: search } };
-
-            // 2. Regex Search (Partial matches - slower but necessary for substrings)
-            // We use specific indices where possible
-            const searchRegex = { $regex: safeSearch, $options: 'i' };
+            // 1. Regex Search (Partial matches)
+            const searchRegex = new RegExp(safeSearch, 'i');
 
             // Optimization: If search term looks like a Member ID (M1234), prioritize ID search
             if (/^M\d+$/i.test(search.trim())) {
@@ -220,8 +216,7 @@ router.get('/', verifyToken, checkPermission('member.view'), async (req, res) =>
             } else {
                  andConditions.push({
                     $or: [
-                        textQuery,
-                        { fullName: { $regex: searchRegex } }, // Covered by Text but good for partials
+                        { fullName: searchRegex }, 
                         { firstName: searchRegex },
                         { lastName: searchRegex },
                         { city: searchRegex },
@@ -238,13 +233,14 @@ router.get('/', verifyToken, checkPermission('member.view'), async (req, res) =>
         if (name) {
             const safeName = escapeRegex(name.trim());
             const fullNamePattern = safeName.replace(/\s+/g, '\\s*');
-            const fullNameRegex = { $regex: fullNamePattern, $options: 'i' };
+            const fullNameRegex = new RegExp(fullNamePattern, 'i');
+            const nameRegex = new RegExp(safeName, 'i');
 
             andConditions.push({
                 $or: [
                     { fullName: fullNameRegex },
-                    { firstName: { $regex: safeName, $options: 'i' } },
-                    { lastName: { $regex: safeName, $options: 'i' } }
+                    { firstName: nameRegex },
+                    { lastName: nameRegex }
                 ]
             });
         }
@@ -253,7 +249,7 @@ router.get('/', verifyToken, checkPermission('member.view'), async (req, res) =>
         const { location } = req.query;
         if (location) {
             const safeLoc = escapeRegex(location.trim());
-            const locRegex = { $regex: safeLoc, $options: 'i' };
+            const locRegex = new RegExp(safeLoc, 'i');
             andConditions.push({
                 $or: [
                     { city: locRegex },
@@ -267,13 +263,14 @@ router.get('/', verifyToken, checkPermission('member.view'), async (req, res) =>
         // Contact Filter (Matches Phone)
         const { contact } = req.query;
         if (contact) {
-            andConditions.push({ phone: { $regex: escapeRegex(contact.trim()), $options: 'i' } });
+            const contactRegex = new RegExp(escapeRegex(contact.trim()), 'i');
+            andConditions.push({ phone: contactRegex });
         }
 
 
         if (state) {
             const safeState = escapeRegex(state.trim());
-            const stateRegex = { $regex: safeState, $options: 'i' };
+            const stateRegex = new RegExp(safeState, 'i');
             andConditions.push({
                 $or: [
                     { state: stateRegex },
@@ -284,7 +281,7 @@ router.get('/', verifyToken, checkPermission('member.view'), async (req, res) =>
         }
         if (district) {
             const safeDistrict = escapeRegex(district.trim());
-            const districtRegex = { $regex: safeDistrict, $options: 'i' };
+            const districtRegex = new RegExp(safeDistrict, 'i');
             andConditions.push({
                 $or: [
                     { district: districtRegex },
@@ -295,7 +292,7 @@ router.get('/', verifyToken, checkPermission('member.view'), async (req, res) =>
         }
         if (city) {
             const safeCity = escapeRegex(city.trim());
-            const cityRegex = { $regex: safeCity, $options: 'i' };
+            const cityRegex = new RegExp(safeCity, 'i');
             andConditions.push({
                 $or: [
                     { city: cityRegex },
@@ -307,7 +304,7 @@ router.get('/', verifyToken, checkPermission('member.view'), async (req, res) =>
         }
         if (village) {
             const safeVillage = escapeRegex(village.trim());
-            const villageRegex = { $regex: safeVillage, $options: 'i' };
+            const villageRegex = new RegExp(safeVillage, 'i');
             andConditions.push({
                 $or: [
                     { village: villageRegex },
@@ -758,12 +755,12 @@ router.post('/', verifyToken, checkPermission('member.create'), uploadMiddleware
 
         // 0. Duplicate Check (Prevent duplicates for children)
         if (payload.firstName && payload.lastName && (payload.fatherId || payload.motherId)) {
-            const duplicate = await Member.findOne({
-                firstName: { $regex: new RegExp(`^${payload.firstName}$`, 'i') },
-                lastName: { $regex: new RegExp(`^${payload.lastName}$`, 'i') },
+            const duplicateCheck = await Member.findOne({
+                firstName: new RegExp(`^${payload.firstName}$`, 'i'),
+                lastName: new RegExp(`^${payload.lastName}$`, 'i'),
                 $or: [{ fatherId: payload.fatherId }, { motherId: payload.motherId }]
             });
-            if (duplicate) {
+            if (duplicateCheck) {
                 return res.status(409).json({ message: 'A child with this name already exists for this parent.' });
             }
         }
@@ -1612,8 +1609,9 @@ router.get('/by-pincode/:pincode', verifyToken, checkPermission('member.view'), 
 
         let query = {
             $or: [
-                { 'geography.pincode': parseInt(pincode) },
-                { 'address': { $regex: pincode, $options: 'i' } } // Fallback for legacy data
+                { 'geography.pincode': new RegExp(pincode, 'i') },
+                { 'communication_info.address.pincode': new RegExp(pincode, 'i') },
+                { 'address': new RegExp(pincode, 'i') } // Fallback for legacy data
             ]
         };
 
@@ -1689,7 +1687,7 @@ router.get('/search/maiden-name/:name', verifyToken, checkPermission('member.vie
         const { limit = 20 } = req.query;
 
         const members = await Member.find({
-            'personal_info.names.maiden_name': { $regex: name, $options: 'i' }
+            'personal_info.names.maiden_name': new RegExp(name, 'i')
         })
             .select('memberId personal_info geography firstName lastName')
             .limit(parseInt(limit))
