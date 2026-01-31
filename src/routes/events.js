@@ -6,14 +6,16 @@ const path = require('path');
 const fs = require('fs');
 const router = express.Router();
 
-// Multer Configuration for Events
+// Multer Configuration for Events (Absolute Path for Robustness)
+const uploadDir = path.join(process.cwd(), 'uploads', 'events');
+if (!fs.existsSync(uploadDir)) {
+    console.log(`[System] Creating missing events upload directory at: ${uploadDir}`);
+    fs.mkdirSync(uploadDir, { recursive: true });
+}
+
 const storage = multer.diskStorage({
     destination: (req, file, cb) => {
-        const dir = 'uploads/events/';
-        if (!fs.existsSync(dir)){
-            fs.mkdirSync(dir, { recursive: true });
-        }
-        cb(null, dir);
+        cb(null, uploadDir);
     },
     filename: (req, file, cb) => {
         const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);

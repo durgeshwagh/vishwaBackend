@@ -3,7 +3,17 @@ const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
 const bodyParser = require('body-parser');
+const path = require('path');
+const fs = require('fs');
 require('dotenv').config();
+
+// Ensure uploads directory exists globally
+const uploadDir = path.join(process.cwd(), 'uploads');
+if (!fs.existsSync(uploadDir)) {
+    console.log(`[System] Creating missing uploads directory at: ${uploadDir}`);
+    fs.mkdirSync(uploadDir, { recursive: true });
+}
+
 
 const authRoutes = require('./src/routes/auth');
 const memberRoutes = require('./src/routes/members');

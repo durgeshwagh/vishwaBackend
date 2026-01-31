@@ -19,6 +19,6 @@ projects:
                 sync: false
             region: oregon
             buildCommand: npm install
-            startCommand: node index.js
+            startCommand: node server.js
             autoDeployTrigger: commit
             rootDir: ./

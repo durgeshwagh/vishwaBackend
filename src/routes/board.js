@@ -1,5 +1,7 @@
 const express = require('express');
 const router = express.Router();
+const path = require('path');
+const fs = require('fs');
 
 /**
  * @swagger
@@ -11,10 +13,17 @@ const BoardMember = require('../models/BoardMember');
 const { verifyToken } = require('../middleware/authMiddleware');
 const multer = require('multer');
 
+// Ensure uploads directory exists (Absolute Path for Robustness)
+const uploadDir = path.join(process.cwd(), 'uploads');
+if (!fs.existsSync(uploadDir)) {
+    console.log(`[System] Creating missing uploads directory at: ${uploadDir}`);
+    fs.mkdirSync(uploadDir, { recursive: true });
+}
+
 // Configure Multer for File Uploads (Photos)
 const storage = multer.diskStorage({
     destination: (req, file, cb) => {
-        cb(null, 'uploads/');
+        cb(null, uploadDir);
     },
     filename: (req, file, cb) => {
         cb(null, `board-${Date.now()}-${file.originalname}`);

@@ -4,8 +4,16 @@ const Marriage = require('../models/Marriage');
 const { verifyToken, checkPermission } = require('../middleware/authMiddleware');
 const multer = require('multer');
 const path = require('path');
+const fs = require('fs');
 const cacheService = require('../services/cache.service');
 const router = express.Router();
+
+// Ensure uploads directory exists (Absolute Path for Robustness)
+const uploadDir = path.join(process.cwd(), 'uploads');
+if (!fs.existsSync(uploadDir)) {
+    console.log(`[System] Creating missing uploads directory at: ${uploadDir}`);
+    fs.mkdirSync(uploadDir, { recursive: true });
+}
 
 /**
  * @swagger
@@ -50,7 +58,7 @@ const router = express.Router();
 // Multer Configuration (Disk Storage for Optimization)
 const storage = multer.diskStorage({
     destination: (req, file, cb) => {
-        cb(null, 'uploads/');
+        cb(null, uploadDir);
     },
     filename: (req, file, cb) => {
         const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
@@ -1139,20 +1147,24 @@ router.put('/:id', verifyToken, checkPermission('member.edit'), uploadMiddleware
 ]), async (req, res) => {
     try {
         const mainId = req.params.id;
-        let updates = req.body;
-        updates.id = mainId; // Ensure ID is passed
+        // Strip id from req.body to prevent Mongoose immutable field errors
+        let { id, _id, ...updates } = req.body;
+        
+        console.log(`[DEBUG] PUT /members/${mainId} - Files:`, req.files ? Object.keys(req.files) : 'None');
 
         // Handle Files
         if (req.files) {
             if (req.files['photo']) {
                 updates.photoUrl = `uploads/${req.files['photo'][0].filename}`;
+                console.log(`[DEBUG] Main Photo Uploaded: ${updates.photoUrl}`);
             }
             if (req.files['spousePhoto']) {
                 updates.spousePhotoUrl = `uploads/${req.files['spousePhoto'][0].filename}`;
+                console.log(`[DEBUG] Spouse Photo Uploaded: ${updates.spousePhotoUrl}`);
             }
         }
         
-        console.log(`[DEBUG] PUT /members/${mainId} Payload:`, JSON.stringify(req.body, null, 2)); // DEBUG LOG
+        console.log(`[DEBUG] PUT /members/${mainId} Final Updates:`, JSON.stringify(updates, null, 2));
 
         const member = await Member.findById(mainId);
         if (!member) return res.status(404).json({ message: 'Member not found' });
