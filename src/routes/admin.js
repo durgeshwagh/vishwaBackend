@@ -51,11 +51,16 @@ router.get('/users', verifyToken, verifyAdmin, async (req, res) => {
         const query = {};
 
         if (search) {
-            query.$or = [
-                { name: { $regex: search, $options: 'i' } },
-                { username: { $regex: search, $options: 'i' } },
-                { memberId: { $regex: search, $options: 'i' } }
-            ];
+             // Performance Optimization: Use $text search if possible, otherwise regex
+             // Note: $text requires Whole Words. For partial matches, we still need regex.
+             // We prioritize Text Search score if available.
+             query.$or = [
+                 { $text: { $search: search } }, // Uses Text Index (Fast)
+                 { name: { $regex: search, $options: 'i' } },
+                 { username: { $regex: search, $options: 'i' } },
+                 { memberId: { $regex: search, $options: 'i' } }
+             ];
+             // Since we added Text Index to User.js, this will help.
         }
 
         // Add Status Filter

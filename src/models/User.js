@@ -31,4 +31,13 @@ UserSchema.index({ username: 1 }, { unique: true }); // Login by username
 UserSchema.index({ role: 1, isVerified: 1 }); // Admin queries for user management
 UserSchema.index({ isVerified: 1 }); // Pending approvals query
 
+// Full Text Search Index
+UserSchema.index({
+    name: 'text',
+    username: 'text',
+    mobile: 'text',
+    email: 'text',
+    memberId: 'text'
+});
+
 module.exports = mongoose.model('User', UserSchema);

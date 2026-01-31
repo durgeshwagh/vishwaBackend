@@ -207,33 +207,29 @@ router.get('/', verifyToken, checkPermission('member.view'), async (req, res) =>
         if (search) {
             const safeSearch = escapeRegex(search.trim());
             
-            // 1. Standard Regex for single fields
+            // 1. Text Search (Fastest - Matches whole words)
+            const textQuery = { $text: { $search: search } };
+
+            // 2. Regex Search (Partial matches - slower but necessary for substrings)
+            // We use specific indices where possible
             const searchRegex = { $regex: safeSearch, $options: 'i' };
 
-            // 2. Full Name Regex (Allow flexible spaces)
-            const fullNamePattern = safeSearch.replace(/\s+/g, '\\s*'); 
-            const fullNameRegex = { $regex: fullNamePattern, $options: 'i' };
-
-            andConditions.push({
-                $or: [
-                    { fullName: fullNameRegex },
-                    { firstName: searchRegex }, // Added
-                    { lastName: searchRegex }, // Added
-                    { middleName: searchRegex }, // Added
-                    { stateName: searchRegex },
-                    { districtName: searchRegex },
-                    { talukaName: searchRegex },
-                    { villageName: searchRegex },
-                    { city: searchRegex },
-                    { village: searchRegex },
-                    { memberId: searchRegex },
-                    { phone: searchRegex },
-                    { spouseMiddleName: searchRegex },
-                    { occupation: searchRegex },
-                    { state: searchRegex },
-                    { district: searchRegex }
-                ]
-            });
+            // Optimization: If search term looks like a Member ID (M1234), prioritize ID search
+            if (/^M\d+$/i.test(search.trim())) {
+                 andConditions.push({ memberId: searchRegex });
+            } else {
+                 andConditions.push({
+                    $or: [
+                        textQuery,
+                        { fullName: { $regex: searchRegex } }, // Covered by Text but good for partials
+                        { firstName: searchRegex },
+                        { lastName: searchRegex },
+                        { city: searchRegex },
+                        { village: searchRegex },
+                        { phone: searchRegex }
+                    ]
+                 });
+            }
         }
 
         // Advanced Filters (AND logic)
@@ -689,26 +685,18 @@ async function upsertMemberRecursive(memberData, context = {}) {
         if (data.children) {
             const childrenData = typeof data.children === 'string' ? JSON.parse(data.children) : data.children;
 
-            if (Array.isArray(childrenData)) {
-                for (const child of childrenData) {
+            if (Array.isArray(childrenData) && childrenData.length > 0) {
+                // Optimization: Process children in parallel instead of sequential await
+                console.log(`[Performance] Processing ${childrenData.length} children in parallel`);
+                await Promise.all(childrenData.map(async (child) => {
                     const childContext = {
                         familyId: savedMember.familyId, // Children inherit birth family from parent (Linkage)
-                        fatherId: savedMember.gender === 'Male' ? savedMember._id : null, // We don't know spouse ID easily here without querying marriage
+                        fatherId: savedMember.gender === 'Male' ? savedMember._id : null, 
                         motherId: savedMember.gender === 'Female' ? savedMember._id : null,
                         lastName: savedMember.lastName
                     };
-
-                    // If we need the other parent (Spouse), we should ideally find the active marriage.
-                    // But for recursive bulk insert, we might assume the 'data.spouse' we just processed is the parent.
-                    // This is getting complex for recursive. 
-                    // Simplified: Set the known parent. The other parent can be linked later or if we fetched it above.
-
-                    // IF we processed a spouse above, we could pass it?
-                    // But `upsertMemberRecursive` is standard. 
-                    // Let's rely on single parent link for now which defines the tree structure primarily.
-
-                    await upsertMemberRecursive(child, childContext);
-                }
+                    return upsertMemberRecursive(child, childContext);
+                }));
             }
         }
 
